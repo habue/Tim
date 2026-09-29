@@ -11,6 +11,8 @@ import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.item.ItemStack;
+import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
@@ -19,6 +21,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.function.BooleanSupplier;
 
@@ -27,6 +30,7 @@ public abstract class HandledScreenMixin extends Screen {
     @Shadow protected int backgroundWidth;
     @Shadow protected int x;
     @Shadow protected int y;
+    @Shadow protected Slot focusedSlot;
 
     @Unique private ButtonWidget s1Button;
     @Unique private ButtonWidget s2Button;
@@ -35,9 +39,61 @@ public abstract class HandledScreenMixin extends Screen {
         super(title);
     }
 
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void onMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (button == 2) { // Middle click
+            Inventory101 inv101 = Modules.get().get(Inventory101.class);
+            if (inv101 != null && inv101.isActive()) {
+                if (this.focusedSlot != null && this.focusedSlot.hasStack()) {
+                    ItemStack stack = this.focusedSlot.getStack();
+                    if (Inventory101.isShulker(stack)) {
+                        inv101.openPreview(stack);
+                        cir.setReturnValue(true);
+                    } else if (Inventory101.isEnderChest(stack)) {
+                        inv101.openEnderChestPreview(stack);
+                        cir.setReturnValue(true);
+                    }
+                }
+            }
+        }
+    }
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void onRenderGlobalShulkerIcons(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        Inventory101 inv101 = Modules.get().get(Inventory101.class);
+        if (inv101 == null || !inv101.isActive()) return;
+
+        HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+
+        if (screen instanceof GenericContainerScreen containerScreen) {
+            String titleStr = containerScreen.getTitle().getString().toLowerCase();
+            if (titleStr.contains("ender chest") || containerScreen.getScreenHandler().getInventory() instanceof net.minecraft.inventory.EnderChestInventory) {
+                Inventory101.updateCachedEnderChest(containerScreen.getScreenHandler().getInventory());
+            }
+        }
+
+        for (Slot slot : screen.getScreenHandler().slots) {
+            if (slot.hasStack()) {
+                ItemStack stack = slot.getStack();
+                if (Inventory101.isShulker(stack)) {
+                    ItemStack dominant = Inventory101.getDominantItem(stack);
+                    if (!dominant.isEmpty()) {
+                        float scale = (float) inv101.getIconScale();
+                        float centerOffset = (16.0f * (1.0f - scale)) / 2.0f;
+
+                        context.getMatrices().push();
+                        context.getMatrices().translate(this.x + slot.x + 1 + centerOffset, this.y + slot.y + 1 + centerOffset, 230.0F);
+                        context.getMatrices().scale(scale, scale, 1.0F);
+                        context.drawItem(dominant, 0, 0);
+                        context.getMatrices().pop();
+                    }
+                }
+            }
+        }
+    }
+
     @Inject(method = "init", at = @At("TAIL"))
     private void onInit(CallbackInfo ci) {
-        // Reset buttons to prevent conflicts if switching between different screens
         s1Button = null;
         s2Button = null;
 
@@ -63,10 +119,9 @@ public abstract class HandledScreenMixin extends Screen {
             return;
         }
 
-        HandledScreen<?> screen         = (HandledScreen<?>) (Object) this;
+        HandledScreen<?> screen        = (HandledScreen<?>) (Object) this;
         int              containerSlots = screen.getScreenHandler().slots.size() - 36;
 
-        // ── Inventory101 buttons ──────────────────────────────────────────
         if (inv101Active) {
             if ((Object) this instanceof ShulkerBoxScreen) {
                 int bx = this.x - 25;
@@ -116,20 +171,15 @@ public abstract class HandledScreenMixin extends Screen {
                 return;
             }
 
-            // ── CHEST SORT BUTTON: Inside top-right, to the left of S/D ──
             if ((Object) this instanceof GenericContainerScreen && inv101.isSortButtonEnabled()) {
-                // Math: S/D take up 30px + 8px right padding = 38px from the right edge.
-                // Sort is 30px wide + 2px gap = 32px. 
-                // 38 + 32 = 70px total from the right edge.
                 int bx = this.x + this.backgroundWidth - 70;
-                int by = this.y + 2; // Matches S/D vertical alignment
+                int by = this.y + 2;
                 this.addDrawableChild(mouseOnly(Text.literal("Sort"),
                     btn -> inv101.startSorting(), bx, by, 30, 14, 
                     net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Sort shulkers by colour"))));
             }
         }
 
-        // ── LootLens / DungeonAssistant Steal+Dump buttons ──────────────
         if (containerSlots <= 0) return;
 
         LootLens ll = Modules.get().get(LootLens.class);
@@ -143,17 +193,12 @@ public abstract class HandledScreenMixin extends Screen {
         }
     }
 
-    /**
-     * Dynamically reposition S1/S2 buttons every frame so they dodge the recipe book.
-     */
     @Inject(method = "render", at = @At("HEAD"))
     private void onRender(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if ((Object) this instanceof InventoryScreen && s1Button != null && s2Button != null) {
-            // Minecraft shifts the GUI exactly 177 pixels to the right when the recipe book opens.
             int defaultX = (this.width - this.backgroundWidth) / 2;
             boolean isRecipeBookOpen = this.x > defaultX + 50; 
             
-            // If recipe book is open, move to the right side. Otherwise, left side.
             int bx = isRecipeBookOpen ? (this.x + this.backgroundWidth + 5) : (this.x - 25);
             int by = this.y;
             
@@ -162,21 +207,18 @@ public abstract class HandledScreenMixin extends Screen {
         }
     }
 
-    /**
-     * Creates a ButtonWidget that only reacts to mouse clicks.
-     */
     private static ButtonWidget mouseOnly(Text label, ButtonWidget.PressAction action,
-                                          int x, int y, int width, int height,
-                                          net.minecraft.client.gui.tooltip.Tooltip tooltip) {
+                                       int x, int y, int width, int height,
+                                       net.minecraft.client.gui.tooltip.Tooltip tooltip) {
         return mouseOnly(label, action, x, y, width, height, tooltip, null);
     }
 
     private static ButtonWidget mouseOnly(Text label, ButtonWidget.PressAction action,
-                                          int x, int y, int width, int height,
-                                          net.minecraft.client.gui.tooltip.Tooltip tooltip,
-                                          BooleanSupplier hasData) {
+                                       int x, int y, int width, int height,
+                                       net.minecraft.client.gui.tooltip.Tooltip tooltip,
+                                       BooleanSupplier hasData) {
         ButtonWidget btn = new ButtonWidget(x, y, width, height, label, action,
-                textSupplier -> textSupplier.get().copy()) {
+            textSupplier -> textSupplier.get().copy()) {
             @Override
             public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
                 return false;
@@ -201,19 +243,16 @@ public abstract class HandledScreenMixin extends Screen {
         return btn;
     }
 
-    // ── Helper: Shared Steal/Dump buttons ────────────────────────────────────────────
     private void addStealDumpButtons(HandledScreen<?> screen, int containerSlots) {
         int buttonX, buttonY, buttonW, buttonH, buttonGap;
 
         if ((Object) this instanceof GenericContainerScreen) {
-            // ── CHEST: Perfectly centered 14x14 buttons in the 18px title header (Right Side) ──
             buttonW = 14;
             buttonH = 14;
             buttonGap = 2;
-            buttonX = this.x + this.backgroundWidth - 8 - buttonW - buttonGap - buttonW; // 8px right padding
-            buttonY = this.y + 2; // Centers 14px button in 18px header (18 - 14 = 4 -> 2px top/bottom)
+            buttonX = this.x + this.backgroundWidth - 8 - buttonW - buttonGap - buttonW;
+            buttonY = this.y + 2;
         } else {
-            // ── OTHER CONTAINERS: Standard 20x20 buttons externally ──
             buttonW = 20;
             buttonH = 20;
             buttonGap = 4;
@@ -231,7 +270,6 @@ public abstract class HandledScreenMixin extends Screen {
             }
         }
 
-        // S = Steal: shift-click all items from container into player inventory
         this.addDrawableChild(mouseOnly(Text.literal("S"),
             button -> {
                 for (int i = 0; i < containerSlots; i++) {
@@ -244,7 +282,6 @@ public abstract class HandledScreenMixin extends Screen {
             }, buttonX, buttonY, buttonW, buttonH,
             net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Steal all items from container"))));
 
-        // D = Dump: shift-click all player inventory items into the container
         this.addDrawableChild(mouseOnly(Text.literal("D"),
             button -> {
                 for (int i = containerSlots; i < screen.getScreenHandler().slots.size(); i++) {

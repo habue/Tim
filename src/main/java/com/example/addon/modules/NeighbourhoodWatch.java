@@ -42,10 +42,6 @@ import net.minecraft.util.Formatting;
 
 public class NeighbourhoodWatch extends Module {
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Enums
-    // ═══════════════════════════════════════════════════════════════════════════
-
     public enum PlayerStatus { Friend, Enemy, Proxy, Other }
 
     public enum TabEvent   { Join, Leave, Both }
@@ -75,19 +71,11 @@ public class NeighbourhoodWatch extends Module {
         DangerSound(SoundEvent event) { this.event = event; }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Setting Groups
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final SettingGroup sgSafety      = settings.createGroup("Safety");
     private final SettingGroup sgMsgControl  = settings.createGroup("Message Control");
     private final SettingGroup sgTracking    = settings.createGroup("Player Tracking");
     private final SettingGroup sgFriends     = settings.createGroup("Friends & Enemies");
     private final SettingGroup sgTabList     = settings.createGroup("Tab List Monitoring");
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Safety
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private final Setting<Boolean> disconnectOnPlayer = sgSafety.add(new BoolSetting.Builder()
         .name("disconnect-on-player")
@@ -120,10 +108,6 @@ public class NeighbourhoodWatch extends Module {
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Message Control
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<FilterMode> filterMode = sgMsgControl.add(new EnumSetting.Builder<FilterMode>()
         .name("mode")
         .description("Censor: replaces matched keywords with XXXX. AutoIgnore: runs /ignorehard on the sender.")
@@ -137,10 +121,6 @@ public class NeighbourhoodWatch extends Module {
         .defaultValue(List.of())
         .build()
     );
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Player Tracking
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private final Setting<Boolean> trackPlayers = sgTracking.add(new BoolSetting.Builder()
         .name("track-players")
@@ -204,11 +184,9 @@ public class NeighbourhoodWatch extends Module {
         .build()
     );
 
-    // ── Highlight rendering ───────────────────────────────────────────────────
-
     private final Setting<HighlightMode> highlightMode = sgTracking.add(new EnumSetting.Builder<HighlightMode>()
         .name("highlight-mode")
-        .description("Wireframe draws custom geometry. Spectral uses the vanilla glow pipeline.")
+        .description("Wireframe draws custom geometry. Spectral uses custom colors via vanilla glow pipeline.")
         .defaultValue(HighlightMode.Wireframe)
         .visible(trackPlayers::get)
         .build()
@@ -221,10 +199,6 @@ public class NeighbourhoodWatch extends Module {
         .visible(() -> trackPlayers.get() && highlightMode.get() == HighlightMode.Wireframe)
         .build()
     );
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Friends & Enemies
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private final Setting<List<String>> friends = sgFriends.add(new StringListSetting.Builder()
         .name("friends").description("Players treated as friends. Case-insensitive.")
@@ -275,10 +249,6 @@ public class NeighbourhoodWatch extends Module {
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Tab List Monitoring
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<TabEvent> tabEvent = sgTabList.add(new EnumSetting.Builder<TabEvent>()
         .name("event")
         .description("Which tab-list event to notify on.")
@@ -293,10 +263,6 @@ public class NeighbourhoodWatch extends Module {
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // State
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Set<Integer> notifiedPlayers    = new HashSet<>();
     private final Set<Integer> activelyOutlined   = new HashSet<>();
     private final Set<String>  ignoredThisSession = new HashSet<>();
@@ -305,25 +271,16 @@ public class NeighbourhoodWatch extends Module {
     private final Set<String>  enemySet           = new HashSet<>();
     private final Set<String>  proxySet           = new HashSet<>();
     private final Map<String, Integer> totemPops  = new HashMap<>();
+    private final Map<Integer, Integer> spectralColors = new HashMap<>();
 
     private boolean anyPlayerNearby = false;
-
-    // Action Bar State
     private int actionBarTicks = 0;
     private Text actionBarMessage = null;
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Constructor
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public NeighbourhoodWatch() {
         super(Tim.CATEGORY, "neighbourhood-watch",
             "Manages player tracking, safety, server monitoring, and keyword alerts.");
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Lifecycle
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @Override
     public void onActivate() {
@@ -351,10 +308,6 @@ public class NeighbourhoodWatch extends Module {
         anyPlayerNearby = false;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Tick
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.world == null) return;
@@ -365,13 +318,8 @@ public class NeighbourhoodWatch extends Module {
         tickActionBar();
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Action Bar Logic
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private void tickActionBar() {
         if (actionBarTicks > 0 && actionBarMessage != null) {
-            // Using the native Minecraft overlay renderer directly prevents it from being intercepted by chat processors
             mc.inGameHud.setOverlayMessage(actionBarMessage, false);
             actionBarTicks--;
             if (actionBarTicks == 0) {
@@ -379,10 +327,6 @@ public class NeighbourhoodWatch extends Module {
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Outline management (Spectral / GlowingRegistry)
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void tickOutlineShader() {
         if (!trackPlayers.get()) {
@@ -392,9 +336,10 @@ public class NeighbourhoodWatch extends Module {
 
         boolean spectral = highlightMode.get() == HighlightMode.Spectral;
         Set<Integer> newlyActive = new HashSet<>();
+        Map<Integer, Integer> newSpectralColors = new HashMap<>();
 
         for (PlayerEntity player : mc.world.getPlayers()) {
-            if (player == mc.player || player.isSpectator()) continue;
+            if (isLocalPlayer(player) || player.isSpectator()) continue;
             if (mc.player.distanceTo(player) > trackRange.get()) continue;
 
             String       name   = player.getName().getString();
@@ -415,9 +360,9 @@ public class NeighbourhoodWatch extends Module {
                     case Proxy  -> proxyColor.get();
                     case Other  -> otherColor.get();
                 };
-                GlowingRegistry.add(player.getId(), (255 << 24) | (color.r << 16) | (color.g << 8) | color.b);
+                newSpectralColors.put(player.getId(), toArgb(color));
             }
-            
+
             newlyActive.add(player.getId());
         }
 
@@ -427,20 +372,32 @@ public class NeighbourhoodWatch extends Module {
             }
         }
 
+        spectralColors.clear();
+        spectralColors.putAll(newSpectralColors);
+
+        if (spectral) {
+            for (Map.Entry<Integer, Integer> entry : spectralColors.entrySet()) {
+                GlowingRegistry.add(entry.getKey(), entry.getValue());
+            }
+        }
+
         activelyOutlined.clear();
         activelyOutlined.addAll(newlyActive);
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Render 3D — wireframe outline
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (mc.world == null || mc.player == null) return;
 
+        if (trackPlayers.get() && highlightMode.get() == HighlightMode.Spectral) {
+            for (Map.Entry<Integer, Integer> entry : spectralColors.entrySet()) {
+                GlowingRegistry.add(entry.getKey(), entry.getValue());
+            }
+        }
+
         if (trackPlayers.get() && highlightMode.get() == HighlightMode.Wireframe) {
             for (PlayerEntity player : mc.world.getPlayers()) {
+                if (isLocalPlayer(player)) continue;
                 if (!activelyOutlined.contains(player.getId())) continue;
 
                 String       name   = player.getName().getString();
@@ -460,26 +417,19 @@ public class NeighbourhoodWatch extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Packet Handler — Tab list & Totem Pops
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
         if (mc.player == null || mc.world == null) return;
 
-        // Handle Totem Pops
         if (event.packet instanceof EntityStatusS2CPacket statusPacket) {
-            // 35 is the entity status for Totem of Undying activation
             if (statusPacket.getStatus() == 35) {
                 Entity entity = statusPacket.getEntity(mc.world);
-                if (entity instanceof PlayerEntity player && player != mc.player) {
+                if (entity instanceof PlayerEntity player && !isLocalPlayer(player)) {
                     handleTotemPop(player);
                 }
             }
         }
 
-        // Handle Tab List
         if (!(event.packet instanceof PlayerListS2CPacket packet)) return;
 
         for (PlayerListS2CPacket.Entry entry : packet.getEntries()) {
@@ -499,10 +449,6 @@ public class NeighbourhoodWatch extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Chat message listener — Message Control
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @EventHandler
     private void onReceiveMessage(meteordevelopment.meteorclient.events.game.ReceiveMessageEvent event) {
         if (mc.player == null || mc.player.networkHandler == null) return;
@@ -516,15 +462,11 @@ public class NeighbourhoodWatch extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Tick Logic
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private boolean tickDisconnectOnPlayer() {
         if (!disconnectOnPlayer.get()) return false;
 
         for (PlayerEntity player : mc.world.getPlayers()) {
-            if (player == mc.player || player.isCreative() || player.isSpectator()) continue;
+            if (isLocalPlayer(player) || player.isCreative() || player.isSpectator()) continue;
             if (ignoreFriendsOnDisconnect.get()  && isFriend(player.getName().getString())) continue;
             if (ignoreProxiesOnDisconnect.get()  && isProxy(player.getName().getString()))  continue;
             if (mc.player.distanceTo(player) <= playerDetectionRange.get()) {
@@ -538,7 +480,7 @@ public class NeighbourhoodWatch extends Module {
     private void tickPlayerTracking() {
         if (!trackPlayers.get()) {
             anyPlayerNearby = false;
-            notifiedPlayers.clear(); // Clear so they get re-notified if tracking is toggled
+            notifiedPlayers.clear();
             return;
         }
 
@@ -546,7 +488,7 @@ public class NeighbourhoodWatch extends Module {
         Set<Integer> playersInVisualRangeThisTick = new HashSet<>();
 
         for (PlayerEntity player : mc.world.getPlayers()) {
-            if (player == mc.player || player.isSpectator()) continue;
+            if (isLocalPlayer(player) || player.isSpectator()) continue;
             if (mc.player.distanceTo(player) > trackRange.get()) continue;
 
             anyPlayerNearby = true;
@@ -558,7 +500,6 @@ public class NeighbourhoodWatch extends Module {
             boolean isNewlySpotted = !notifiedPlayers.contains(player.getId());
 
             if (isNewlySpotted) {
-                // ── Update Last Seen HUD directly ──
                 Hud hudSystem = Systems.get(Hud.class);
                 if (hudSystem != null) {
                     for (HudElement element : hudSystem) {
@@ -588,7 +529,7 @@ public class NeighbourhoodWatch extends Module {
                     info(msg);
 
                     actionBarMessage = Text.literal(msg).formatted(Formatting.RED, Formatting.BOLD);
-                    actionBarTicks = 40 + (int)(Math.random() * 61); // Random 2 to 5 seconds (40 to 100 ticks)
+                    actionBarTicks = 40 + (int)(Math.random() * 61);
                 }
 
                 DangerSound sound = dangerSound.get();
@@ -602,7 +543,6 @@ public class NeighbourhoodWatch extends Module {
             }
         }
 
-        // Check for players who left visual range this tick
         for (Integer id : notifiedPlayers) {
             if (!playersInVisualRangeThisTick.contains(id)) {
                 PlayerEntity player = (PlayerEntity) mc.world.getEntityById(id);
@@ -619,22 +559,17 @@ public class NeighbourhoodWatch extends Module {
 
                     if (shouldNotify && alertNotifications.get()) {
                         info("§e%s has left visual range.", name);
-                        
+
                         actionBarMessage = Text.literal(name + " left visual range!").formatted(Formatting.YELLOW, Formatting.BOLD);
-                        actionBarTicks = 40 + (int)(Math.random() * 61); // Random 2 to 5 seconds
+                        actionBarTicks = 40 + (int)(Math.random() * 61);
                     }
                 }
             }
         }
 
-        // Update the notified players set to match those currently in range
         notifiedPlayers.clear();
         notifiedPlayers.addAll(playersInVisualRangeThisTick);
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Totem Pop Handler
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void handleTotemPop(PlayerEntity player) {
         if (!alertNotifications.get()) return;
@@ -645,15 +580,11 @@ public class NeighbourhoodWatch extends Module {
 
         String popMsg = name + " just popped a totem! (" + pops + ")";
 
-        info("§d" + popMsg); // Light purple in chat
-        
-        actionBarMessage = Text.literal(popMsg).formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD);
-        actionBarTicks = 40 + (int)(Math.random() * 61); // Random 2 to 5 seconds
-    }
+        info("§d" + popMsg);
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Tab List
-    // ═══════════════════════════════════════════════════════════════════════════
+        actionBarMessage = Text.literal(popMsg).formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD);
+        actionBarTicks = 40 + (int)(Math.random() * 61);
+    }
 
     private void handleTabListChange(String playerName, String action) {
         PlayerStatus status = getPlayerStatusPublic(playerName);
@@ -679,10 +610,6 @@ public class NeighbourhoodWatch extends Module {
         };
         info("%s %s has %s the server.", label, playerName, action);
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Chat Parsing — Message Control
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private String[] parseSenderAndBody(String rawMessage) {
         if (rawMessage.startsWith("<")) {
@@ -738,12 +665,12 @@ public class NeighbourhoodWatch extends Module {
         for (int id : activelyOutlined) {
             GlowingRegistry.remove(id);
         }
+        if (mc.player != null) {
+            GlowingRegistry.remove(mc.player.getId());
+        }
         activelyOutlined.clear();
+        spectralColors.clear();
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // General Helpers
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void resetState() {
         notifiedPlayers.clear();
@@ -770,13 +697,31 @@ public class NeighbourhoodWatch extends Module {
         this.toggle();
     }
 
+    private boolean isLocalPlayer(PlayerEntity player) {
+        if (player == null || mc.player == null) return false;
+        if (player == mc.player) return true;
+        if (player.getId() == mc.player.getId()) return true;
+
+        if (player.getUuid() != null && mc.player.getUuid() != null) {
+            if (player.getUuid().equals(mc.player.getUuid())) return true;
+        }
+
+        if (player.getGameProfile() != null && mc.player.getGameProfile() != null) {
+            String name1 = player.getGameProfile().getName();
+            String name2 = mc.player.getGameProfile().getName();
+            if (name1 != null && name2 != null && name1.equalsIgnoreCase(name2)) return true;
+        }
+
+        return false;
+    }
+
     private SettingColor withAlpha(SettingColor color, int alpha) {
         return new SettingColor(color.r, color.g, color.b, Math.min(255, Math.max(0, alpha)));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Category Visibility Helpers
-    // ═══════════════════════════════════════════════════════════════════════════
+    private static int toArgb(SettingColor color) {
+        return (color.a << 24) | (color.r << 16) | (color.g << 8) | color.b;
+    }
 
     private boolean isFriendCategoryVisible() {
         return trackFilter.get() == TabFilter.Friends || trackFilter.get() == TabFilter.All
@@ -798,10 +743,6 @@ public class NeighbourhoodWatch extends Module {
             || tabFilter.get()   == TabFilter.Others  || tabFilter.get()   == TabFilter.All;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Public API
-    // ═══════════════════════════════════════════════════════════════════════════
-
     public boolean isFriend(String name) { return name != null && friendSet.contains(name.toLowerCase()); }
     public boolean isEnemy(String name)  { return name != null && enemySet.contains(name.toLowerCase()); }
     public boolean isProxy(String name)  { return name != null && proxySet.contains(name.toLowerCase()); }
@@ -817,7 +758,6 @@ public class NeighbourhoodWatch extends Module {
         return disconnectOnPlayer.get();
     }
 
-    /** Exposes whether a player is actively inside tracking range. Used by the HUD. */
     public boolean isAnyPlayerNearby() {
         return anyPlayerNearby;
     }

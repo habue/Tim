@@ -24,6 +24,8 @@ import meteordevelopment.meteorclient.settings.ItemListSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.utils.player.FindItemResult;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
@@ -69,10 +71,6 @@ import net.minecraft.world.chunk.WorldChunk;
 
 public class ChambersAssistant extends Module {
 
-    // ═══════════════════════════════════════════════════════════════
-    // Enums
-    // ═══════════════════════════════════════════════════════════════════════════
-
     public enum TargetType {
         TRIAL_SPAWNER,
         ACTIVE_TRIAL_SPAWNER,
@@ -105,10 +103,6 @@ public class ChambersAssistant extends Module {
         @Override public String toString() { return displayName; }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // State
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private static final int DIMENSION_CHANGE_COOLDOWN_TICKS = 40;
     private static final int INTERACT_TIMEOUT_TICKS = 20;
 
@@ -128,29 +122,25 @@ public class ChambersAssistant extends Module {
     private int omenWarnTimer = 0;
 
     private boolean wasAutoOpened = false;
-    private BlockPos lastOpenedContainer = null;
     private int interactTimeoutTimer = 0;
 
-    private int drinkTimer = 0;
     private int previousDrinkSlot = -1;
     private boolean hasAlertedForCurrentScreen = false;
 
     private String lastDimension = "";
     private int dimensionChangeCooldown = 0;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Setting Groups
-    // ═══════════════════════════════════════════════════════════════════════════
+    // SSVH Automation State
+    private BlockPos pendingVaultPos = null;
+    private int pendingVaultTicks = -1;
+    private final Map<Long, Item> lastKnownVaultItems = new ConcurrentHashMap<>();
+    private final Set<BlockPos> successfullyOpenedVaults = new HashSet<>();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgBlocks = settings.createGroup("Targets - Chambers");
     private final SettingGroup sgEntities = settings.createGroup("Targets - Entities");
     private final SettingGroup sgAutomation = settings.createGroup("Automation");
     private final SettingGroup sgSafety = settings.createGroup("Safety");
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — General
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private final Setting<Integer> range = sgGeneral.add(new IntSetting.Builder()
         .name("range")
@@ -234,10 +224,6 @@ public class ChambersAssistant extends Module {
         .visible(() -> renderMode.get() == RenderMode.PULSE).build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Targets
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<Boolean> trackSpawners = sgBlocks.add(new BoolSetting.Builder()
         .name("track-spawners").description("Highlight Trial Spawners (normal and ominous).").defaultValue(true)
         .build()
@@ -256,7 +242,7 @@ public class ChambersAssistant extends Module {
 
     private final Setting<SettingColor> ejectingSpawnerColor = sgBlocks.add(new ColorSetting.Builder()
         .name("ejecting-spawner-color").description("Color for Trial Spawners that are ejecting rewards.")
-        .defaultValue(new SettingColor(0, 255, 0, 255)) // Green
+        .defaultValue(new SettingColor(0, 255, 0, 255))
         .visible(trackSpawners::get).build()
     );
 
@@ -283,7 +269,7 @@ public class ChambersAssistant extends Module {
 
     private final Setting<SettingColor> ejectingVaultColor = sgBlocks.add(new ColorSetting.Builder()
         .name("ejecting-vault-color").description("Color for vaults that are currently ejecting loot.")
-        .defaultValue(new SettingColor(0, 255, 0, 255)) // Green
+        .defaultValue(new SettingColor(0, 255, 0, 255))
         .visible(trackVaults::get).build()
     );
 
@@ -299,7 +285,7 @@ public class ChambersAssistant extends Module {
 
     private final Setting<SettingColor> containerColor = sgBlocks.add(new ColorSetting.Builder()
         .name("container-color").description("Color for standard chests, barrels, and dispensers.")
-        .defaultValue(new SettingColor(0, 0, 255, 255)) // Blue
+        .defaultValue(new SettingColor(0, 0, 255, 255))
         .visible(trackContainers::get).build()
     );
 
@@ -350,10 +336,6 @@ public class ChambersAssistant extends Module {
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Entities
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<Boolean> trackBreezes = sgEntities.add(new BoolSetting.Builder()
         .name("track-breezes").description("Highlights Breezes and Wind Charge projectiles.").defaultValue(true)
         .build()
@@ -385,14 +367,42 @@ public class ChambersAssistant extends Module {
         .visible(trackTrialItems::get).build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Automation & Safety
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<Boolean> autoOpenVaults = sgAutomation.add(new BoolSetting.Builder()
         .name("auto-open-vaults")
         .description("Automatically opens Vaults when you have a Trial Key.")
         .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<List<Item>> vaultTriggerItems = sgAutomation.add(new ItemListSetting.Builder()
+        .name("vault-trigger-items")
+        .description("Items required inside the vault to trigger automatic opening (e.g., Heavy Core).")
+        .defaultValue(List.of(Items.HEAVY_CORE))
+        .visible(autoOpenVaults::get)
+        .build()
+    );
+
+    private final Setting<Double> vaultOpenRange = sgAutomation.add(new DoubleSetting.Builder()
+        .name("vault-open-range")
+        .description("Search radius for automated vault opening.")
+        .defaultValue(5.0).min(1.0).max(10.0).sliderMin(1.0).sliderMax(10.0)
+        .visible(autoOpenVaults::get)
+        .build()
+    );
+
+    private final Setting<Integer> vaultOpenDelay = sgAutomation.add(new IntSetting.Builder()
+        .name("vault-open-delay")
+        .description("Ticks to wait before opening a matched vault.")
+        .defaultValue(0).min(0).max(200).sliderMin(0).sliderMax(100)
+        .visible(autoOpenVaults::get)
+        .build()
+    );
+
+    private final Setting<Boolean> vaultChatNotify = sgAutomation.add(new BoolSetting.Builder()
+        .name("vault-chat-notify")
+        .description("Notify about rotating vault display items in chat.")
+        .defaultValue(true)
+        .visible(autoOpenVaults::get)
         .build()
     );
 
@@ -445,10 +455,6 @@ public class ChambersAssistant extends Module {
         .defaultValue(true).build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Constructor & Lifecycle
-    // ═══════════════════════════════════════════════════════════════════════════
-
     public ChambersAssistant() {
         super(Tim.CATEGORY, "chambers-assistant", "Highlights Trial Chambers elements: spawners, vaults, pots, and breezes.");
     }
@@ -467,27 +473,27 @@ public class ChambersAssistant extends Module {
         trialItemTargets.clear();
         notifiedBreezes.clear();
         omenWarnTimer = 0;
-        drinkTimer = 0;
         previousDrinkSlot = -1;
         hasAlertedForCurrentScreen = false;
+        pendingVaultPos = null;
+        pendingVaultTicks = -1;
+        lastKnownVaultItems.clear();
+        successfullyOpenedVaults.clear();
         GlowingRegistry.clear();
     }
 
     @Override
     public void onDeactivate() {
-        if (drinkTimer > 0) {
-            mc.options.useKey.setPressed(false);
-            if (previousDrinkSlot != -1 && mc.player != null) {
-                mc.player.getInventory().selectedSlot = previousDrinkSlot;
-            }
+        if (previousDrinkSlot != -1 && mc.player != null) {
+            mc.player.getInventory().selectedSlot = previousDrinkSlot;
         }
         GlowingRegistry.clear();
         targets.clear();
+        pendingVaultPos = null;
+        pendingVaultTicks = -1;
+        lastKnownVaultItems.clear();
+        successfullyOpenedVaults.clear();
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Event Handlers
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
@@ -498,6 +504,7 @@ public class ChambersAssistant extends Module {
         updateContainerLogic();
         checkOpenedContainerLoot(); 
         updateOminousDrink();
+        updateVaultAutomation();
         updateDynamicStates();
         updateScanningLogic();
     }
@@ -540,16 +547,11 @@ public class ChambersAssistant extends Module {
             notifiedActiveOminousSpawners.remove(pos);
         }
 
-        // Breezes do not get beams, all other entities do
         renderEntity(event, isSpectral, isPulse, trackBreezes.get(), false, breezeTargets, breezeColor.get());
         renderEntity(event, isSpectral, isPulse, trackBreezes.get(), true, windChargeTargets, breezeColor.get());
         renderEntity(event, isSpectral, isPulse, trackOminousItemFrames.get(), true, itemFrameTargets, itemFrameColor.get());
         renderEntity(event, isSpectral, isPulse, trackTrialItems.get(), true, trialItemTargets, trialItemColor.get());
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Dynamic State Updater
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void updateDynamicStates() {
         if (mc.world == null || mc.player == null) return;
@@ -610,9 +612,110 @@ public class ChambersAssistant extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Scanning Logic
-    // ═══════════════════════════════════════════════════════════════════════════
+    private void updateVaultAutomation() {
+        if (!autoOpenVaults.get() || mc.player == null || mc.world == null) return;
+
+        if (vaultChatNotify.get()) {
+            scanVaultDisplays();
+        }
+
+        if (pendingVaultPos != null) {
+            if (!isVaultTargetValid(pendingVaultPos)) { resetVaultPending(); return; }
+            if (--pendingVaultTicks > 0) return;
+            executeVaultOpen(pendingVaultPos);
+            resetVaultPending();
+            return;
+        }
+
+        for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
+            BlockPos pos = entry.getKey();
+            TargetType type = entry.getValue();
+
+            if (type == TargetType.VAULT || type == TargetType.OMINOUS_VAULT) {
+                // Ignore vaults that have already been successfully opened by this module
+                if (successfullyOpenedVaults.contains(pos)) continue;
+
+                ItemStack display = getVaultDisplayItem(pos);
+                if (display == null || !vaultTriggerItems.get().contains(display.getItem())) continue;
+
+                if (vaultOpenDelay.get() <= 0) {
+                    executeVaultOpen(pos);
+                } else {
+                    pendingVaultPos = pos;
+                    pendingVaultTicks = vaultOpenDelay.get();
+                }
+                break;
+            }
+        }
+    }
+
+    private void resetVaultPending() {
+        pendingVaultPos = null;
+        pendingVaultTicks = -1;
+    }
+
+    private boolean isVaultTargetValid(BlockPos pos) {
+        BlockState state = mc.world.getBlockState(pos);
+        if (state.getBlock() != Blocks.VAULT) return false;
+        if (state.get(Properties.VAULT_STATE) != VaultState.ACTIVE) return false;
+        if (Vec3d.ofCenter(pos).distanceTo(mc.player.getEyePos()) > vaultOpenRange.get()) return false;
+        return mc.world.getBlockEntity(pos) instanceof VaultBlockEntity;
+    }
+
+    private ItemStack getVaultDisplayItem(BlockPos pos) {
+        BlockEntity be = mc.world.getBlockEntity(pos);
+        if (!(be instanceof VaultBlockEntity vault)) return null;
+        ItemStack display = vault.getSharedData().getDisplayItem();
+        return display.isEmpty() ? null : display;
+    }
+
+    private void scanVaultDisplays() {
+        for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
+            BlockPos pos = entry.getKey();
+            if (entry.getValue() != TargetType.VAULT && entry.getValue() != TargetType.OMINOUS_VAULT) continue;
+
+            if (successfullyOpenedVaults.contains(pos)) continue;
+
+            ItemStack display = getVaultDisplayItem(pos);
+            long key = pos.asLong();
+
+            if (display == null) { lastKnownVaultItems.remove(key); continue; }
+
+            Item current = display.getItem();
+            if (current == lastKnownVaultItems.get(key)) continue;
+
+            lastKnownVaultItems.put(key, current);
+            boolean isTrigger = vaultTriggerItems.get().contains(current);
+            
+            StringBuilder msg = new StringBuilder("§7[Vault Display] " + display.getName().getString());
+            if (isTrigger) {
+                msg.append(" §a[MATCH - Triggering Opening]");
+                info(msg.toString());
+                playAlert();
+            } else {
+                msg.append(" §8[Waiting for Whitelist Match]");
+                info(msg.toString());
+            }
+        }
+    }
+
+    private void executeVaultOpen(BlockPos pos) {
+        FindItemResult key = InvUtils.findInHotbar(Items.OMINOUS_TRIAL_KEY);
+        if (!key.found()) {
+            key = InvUtils.findInHotbar(Items.TRIAL_KEY);
+        }
+        if (!key.found()) return;
+
+        InvUtils.swap(key.slot(), false);
+        Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
+            BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos), Direction.NORTH, pos, false);
+            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+            mc.player.swingHand(Hand.MAIN_HAND);
+        });
+        
+        successfullyOpenedVaults.add(pos);
+        checkedContainers.add(pos);
+    }
 
     private void updateScanningLogic() {
         if (mc.world.getRegistryKey() == null) return;
@@ -793,10 +896,6 @@ public class ChambersAssistant extends Module {
         return true;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Block Entity Scanning
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private void scanBlockEntitiesInChunk(WorldChunk chunk) {
         int maxY = chamberYLevel.get(); 
 
@@ -849,10 +948,6 @@ public class ChambersAssistant extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Automation & Safety Logic
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private void updateContainerLogic() {
         if (interactTimeoutTimer > 0) interactTimeoutTimer--;
 
@@ -861,6 +956,7 @@ public class ChambersAssistant extends Module {
                 .filter(e -> e.getValue() == TargetType.VAULT || e.getValue() == TargetType.OMINOUS_VAULT)
                 .map(Map.Entry::getKey)
                 .filter(pos -> !checkedContainers.contains(pos))
+                .filter(pos -> !successfullyOpenedVaults.contains(pos))
                 .filter(pos -> Math.sqrt(pos.getSquaredDistance(mc.player.getPos())) <= 4.5)
                 .sorted(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getPos())))
                 .toList();
@@ -884,7 +980,6 @@ public class ChambersAssistant extends Module {
 
     private void checkOpenedContainerLoot() {
         if (mc.currentScreen instanceof HandledScreen<?> screen && !(mc.currentScreen instanceof InventoryScreen)) {
-            // Ignore Ender Chest and Shulker Box contents to prevent false triggers
             if (mc.currentScreen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Text.translatable("container.enderchest").getString())) {
                 hasAlertedForCurrentScreen = true;
                 return;
@@ -893,7 +988,6 @@ public class ChambersAssistant extends Module {
             if (!hasAlertedForCurrentScreen) {
                 for (int i = 0; i < screen.getScreenHandler().slots.size(); i++) {
                     Slot slot = screen.getScreenHandler().slots.get(i);
-                    // Ignore player's own inventory contents to prevent false triggers
                     if (slot.inventory instanceof PlayerInventory) continue;
                     
                     ItemStack stack = slot.getStack();
@@ -911,40 +1005,24 @@ public class ChambersAssistant extends Module {
     }
 
     private void updateOminousDrink() {
-        if (!autoDrinkOminous.get()) {
-            if (drinkTimer > 0) {
-                mc.options.useKey.setPressed(false);
-                if (previousDrinkSlot != -1 && mc.player != null) {
-                    mc.player.getInventory().selectedSlot = previousDrinkSlot;
-                    previousDrinkSlot = -1;
-                }
-                drinkTimer = 0;
-            }
-            return;
-        }
+        if (!autoDrinkOminous.get()) return;
 
         boolean hasOmen = mc.player.hasStatusEffect(StatusEffects.BAD_OMEN) || mc.player.hasStatusEffect(StatusEffects.TRIAL_OMEN);
-        
         boolean hasNearbySpawner = targets.entrySet().stream()
             .anyMatch(e -> e.getValue() == TargetType.TRIAL_SPAWNER && e.getKey().isWithinDistance(mc.player.getPos(), 8.0));
 
-        if (drinkTimer == 0 && !hasOmen && hasNearbySpawner && mc.currentScreen == null) {
+        if (!hasOmen && hasNearbySpawner && mc.currentScreen == null) {
             int bottleSlot = findOminousBottle();
             if (bottleSlot != -1) {
                 previousDrinkSlot = mc.player.getInventory().selectedSlot;
                 mc.player.getInventory().selectedSlot = bottleSlot;
                 mc.options.useKey.setPressed(true);
-                drinkTimer = 40;
             }
-        } else if (drinkTimer > 0) {
-            drinkTimer--;
-            if (hasOmen || drinkTimer == 0 || mc.player.getInventory().getStack(mc.player.getInventory().selectedSlot).getItem() != Items.OMINOUS_BOTTLE) {
-                mc.options.useKey.setPressed(false);
-                if (previousDrinkSlot != -1) {
-                    mc.player.getInventory().selectedSlot = previousDrinkSlot;
-                    previousDrinkSlot = -1;
-                }
-                drinkTimer = 0;
+        } else {
+            mc.options.useKey.setPressed(false);
+            if (previousDrinkSlot != -1) {
+                mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                previousDrinkSlot = -1;
             }
         }
     }
@@ -1001,10 +1079,6 @@ public class ChambersAssistant extends Module {
         };
         mc.player.playSound(sound, alertVolume.get().floatValue(), 1.0f);
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Bloom & Pulse Rendering
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
         int layers = glowLayers.get();
@@ -1082,10 +1156,6 @@ public class ChambersAssistant extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Utility Helpers
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private boolean validateBlockType(Block block, TargetType type) {
         return switch (type) {
             case TRIAL_SPAWNER, ACTIVE_TRIAL_SPAWNER, EJECTING_TRIAL_SPAWNER, OMINOUS_SPAWNER, ACTIVE_OMINOUS_SPAWNER, EJECTING_OMINOUS_SPAWNER -> block == Blocks.TRIAL_SPAWNER;
@@ -1125,9 +1195,8 @@ public class ChambersAssistant extends Module {
                     toRemove.add(pos);
                 }
             } else {
-                // Chunk is unloaded! Remove the target so the HUD accurately reflects current render distance
                 toRemove.add(pos);
-                scannedChunks.remove(new ChunkPos(chunkX, chunkZ)); // Ensure it gets rescanned if reloaded
+                scannedChunks.remove(new ChunkPos(chunkX, chunkZ));
             }
         }
         for (BlockPos pos : toRemove) {
@@ -1175,10 +1244,6 @@ public class ChambersAssistant extends Module {
     private int toArgb(SettingColor c) {
         return (c.a << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HUD API
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public record ChamberStat(String name, int count, ItemStack icon, ChambersAssistantHud.StatSeverity severity) {}
 

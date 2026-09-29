@@ -7,7 +7,9 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 import org.lwjgl.glfw.GLFW;
 
@@ -26,13 +28,18 @@ import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.BlockState;
-import net.minecraft.component.DataComponentTypes;
 import net.minecraft.block.ShulkerBoxBlock;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.BundleContentsComponent;
+import net.minecraft.component.type.ContainerComponent;
 import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -67,6 +74,7 @@ public class Inventory101 extends Module {
     private final SettingGroup sgOrganizer = settings.createGroup("Organizer");
     private final SettingGroup sgCleaner   = settings.createGroup("Cleaner");
     private final SettingGroup sgAutoTool  = settings.createGroup("Auto-Tool");
+    private final SettingGroup sgPreview   = settings.createGroup("Preview");
 
     // ── Presets ──
     private final Setting<String> preset1Name = sgPresets.add(new StringSetting.Builder()
@@ -313,11 +321,38 @@ public class Inventory101 extends Module {
         .build()
     );
 
-    /**
-     * Builds the combined replenish whitelist from presets + custom items.
-     * Items appear in priority order — presets first (top-to-bottom), then custom
-     * items (in list order). Only items whose toggle is enabled are included.
-     */
+    // ── Preview Settings ──
+    private final Setting<Integer> iconSize = sgPreview.add(new IntSetting.Builder()
+        .name("icon-size")
+        .description("Size of the content icon overlay.")
+        .defaultValue(10)
+        .min(5)
+        .sliderMax(16)
+        .build()
+    );
+
+    private final Setting<Integer> xOffset = sgPreview.add(new IntSetting.Builder()
+        .name("x-offset")
+        .description("Horizontal content icon offset.")
+        .defaultValue(3)
+        .min(-10)
+        .sliderMax(5)
+        .build()
+    );
+
+    private final Setting<Integer> yOffset = sgPreview.add(new IntSetting.Builder()
+        .name("y-offset")
+        .description("Vertical content icon offset.")
+        .defaultValue(3)
+        .min(-10)
+        .sliderMax(5)
+        .build()
+    );
+
+    public double getIconScale() {
+        return iconSize.get() / 16.0;
+    }
+
     private List<Item> getReplenishWhitelist() {
         List<Item> whitelist = new ArrayList<>();
         if (replenishEnderChest.get())                whitelist.add(Items.ENDER_CHEST);
@@ -335,13 +370,6 @@ public class Inventory101 extends Module {
         return whitelist;
     }
 
-    /**
-     * Returns how many items to pull from shulker in one replenish session:
-     *   Single → item.getMaxCount() (1 stack — 1 totem, 1 elytra, or 64 obsidian)
-     *   Fill   → Integer.MAX_VALUE (fill inventory, keep pulling until full or shulker empty)
-     *   Custom → user-specified count (pull exactly N items)
-     * Only called for items whose toggle is enabled.
-     */
     private int getPullLimit(Item item) {
         if (item == Items.ENDER_CHEST) {
             return switch (enderChestMode.get()) {
@@ -392,7 +420,6 @@ public class Inventory101 extends Module {
                 case Custom -> endCrystalCount.get();
             };
         }
-        // Custom items — use shared mode/count
         return switch (customMode.get()) {
             case Single -> item.getMaxCount();
             case Fill -> Integer.MAX_VALUE;
@@ -472,19 +499,37 @@ public class Inventory101 extends Module {
     private int     trashTimer    = 0;
     private boolean trashedForCurrentScreen = false;
 
-    // Interaction state
     private boolean wasClicking   = false;
     private double  lastMouseX    = -1;
     private double  lastMouseY    = -1;
     private final Set<Integer> processedInDrag = new HashSet<>();
 
-    // Auto-tool state
     private boolean moveAllActionTaken  = false;
     private boolean wasBreaking         = false;
     private int     prevSlotAutoTool    = -1;
 
+    // ── Preview Cache & State ──
+    private boolean drawingOverlay = false;
+    private static final WeakHashMap<ItemStack, CachedDominant> dominantCache = new WeakHashMap<>();
+
+    private static class CachedDominant {
+        private final Object data;
+        private final ItemStack stack;
+
+        private CachedDominant(Object data, ItemStack stack) {
+            this.data = data;
+            this.stack = stack;
+        }
+    }
+
     public Inventory101() {
-        super(Tim.CATEGORY, "inventory-101", "Manages inventory layouts with shulker boxes.");
+        super(Tim.CATEGORY, "inventory-101", "Manages inventory layouts with shulker boxes, bundles, and ender chests.");
+    }
+
+    @Override
+    public void onActivate() {
+        dominantCache.clear();
+        drawingOverlay = false;
     }
 
     @Override
@@ -509,15 +554,13 @@ public class Inventory101 extends Module {
         trashedForCurrentScreen = false;
         replenishedForCurrentScreen = false;
         pulledThisSession.clear();
+        dominantCache.clear();
+        drawingOverlay = false;
     }
-
-    // ─────────────────────── Lifecycle Helpers ───────────────────────
 
     public String getPresetName(int index) {
         return (index == 1) ? preset1Name.get() : preset2Name.get();
     }
-
-    // ─────────────────────── Public API for HandledScreenMixin ───────────────────────
 
     public boolean isRegearButtonEnabled() {
         return showRegearButton.get();
@@ -602,7 +645,200 @@ public class Inventory101 extends Module {
         info("Restocking whitelisted items...");
     }
 
-    // ─────────────────────── Tick Handler ───────────────────────
+    // ── Preview APIs (Middle-Click Open & Dominant Item Overlays) ──
+
+    public void openPreview(ItemStack stack) {
+        if (mc.player == null || stack.isEmpty()) return;
+
+        Screen previousScreen = mc.currentScreen;
+        Object data = getContainerData(stack);
+
+        if (data instanceof ContainerComponent container) {
+            SimpleInventory inventory = new SimpleInventory(27);
+            int slot = 0;
+            for (ItemStack item : container.iterateNonEmpty()) {
+                if (slot < 27) {
+                    inventory.setStack(slot++, item.copy());
+                }
+            }
+
+            mc.setScreen(new ShulkerBoxScreen(
+                new ShulkerBoxScreenHandler(mc.player.playerScreenHandler.syncId, mc.player.getInventory(), inventory),
+                mc.player.getInventory(),
+                stack.getName()
+            ) {
+                @Override
+                public void close() {
+                    client.setScreen(previousScreen);
+                }
+            });
+        } else if (data instanceof BundleContentsComponent bundle) {
+            SimpleInventory inventory = new SimpleInventory(64);
+            int slot = 0;
+            for (ItemStack item : bundle.iterate()) {
+                if (slot < 64) {
+                    inventory.setStack(slot++, item.copy());
+                }
+            }
+
+            mc.setScreen(new GenericContainerScreen(
+                GenericContainerScreenHandler.createGeneric9x6(mc.player.playerScreenHandler.syncId, mc.player.getInventory(), inventory),
+                mc.player.getInventory(),
+                stack.getName()
+            ) {
+                @Override
+                public void close() {
+                    client.setScreen(previousScreen);
+                }
+            });
+        }
+    }
+
+    public void openEnderChestPreview(ItemStack chestStack) {
+        if (mc.player == null) return;
+        
+        Screen previousScreen = mc.currentScreen;
+        SimpleInventory inventory = new SimpleInventory(27);
+        
+        ContainerComponent container = chestStack.get(DataComponentTypes.CONTAINER);
+        if (container != null) {
+            int slot = 0;
+            for (ItemStack item : container.iterateNonEmpty()) {
+                if (slot < 27) {
+                    inventory.setStack(slot, item.copy());
+                    slot++;
+                }
+            }
+        } else {
+            net.minecraft.inventory.EnderChestInventory enderChest = mc.player.getEnderChestInventory();
+            if (enderChest != null) {
+                for (int i = 0; i < 27; i++) {
+                    ItemStack st = enderChest.getStack(i);
+                    inventory.setStack(i, st.isEmpty() ? cachedEnderChest[i] : st);
+                }
+            } else {
+                for (int i = 0; i < 27; i++) {
+                    inventory.setStack(i, cachedEnderChest[i].copy());
+                }
+            }
+        }
+
+        mc.setScreen(new ShulkerBoxScreen(
+            new ShulkerBoxScreenHandler(mc.player.playerScreenHandler.syncId, mc.player.getInventory(), inventory),
+            mc.player.getInventory(),
+            chestStack.getName()
+        ) {
+            @Override
+            public void close() {
+                client.setScreen(previousScreen);
+            }
+        });
+    }
+
+    public static boolean isEnderChest(ItemStack stack) {
+        return stack.isOf(Items.ENDER_CHEST);
+    }
+
+    public static boolean isBundle(ItemStack stack) {
+        return stack.contains(DataComponentTypes.BUNDLE_CONTENTS);
+    }
+
+    private static final ItemStack[] cachedEnderChest = new ItemStack[27];
+    static {
+        for (int i = 0; i < 27; i++) cachedEnderChest[i] = ItemStack.EMPTY;
+    }
+
+    public static void updateCachedEnderChest(net.minecraft.inventory.Inventory inventory) {
+        for (int i = 0; i < 27 && i < inventory.size(); i++) {
+            cachedEnderChest[i] = inventory.getStack(i).copy();
+        }
+    }
+
+    public static Object getContainerData(ItemStack stack) {
+        if (stack.getItem() instanceof BlockItem item && item.getBlock() instanceof ShulkerBoxBlock) {
+            return stack.get(DataComponentTypes.CONTAINER);
+        }
+        return stack.get(DataComponentTypes.BUNDLE_CONTENTS);
+    }
+
+    public static ItemStack getDominantItem(ItemStack containerStack) {
+        if (containerStack.isEmpty()) return ItemStack.EMPTY;
+
+        Object data = getContainerData(containerStack);
+        if (data == null) return ItemStack.EMPTY;
+
+        CachedDominant cached = dominantCache.get(containerStack);
+        if (cached != null && Objects.equals(cached.data, data)) {
+            return cached.stack;
+        }
+
+        Iterable<ItemStack> items;
+        if (data instanceof ContainerComponent container) {
+            items = container.iterateNonEmpty();
+        } else if (data instanceof BundleContentsComponent bundle) {
+            items = bundle.iterate();
+        } else {
+            return ItemStack.EMPTY;
+        }
+
+        Map<Item, DominantCounter> counts = new LinkedHashMap<>();
+        for (ItemStack s : items) {
+            if (s.isEmpty()) continue;
+            DominantCounter counter = counts.computeIfAbsent(
+                s.getItem(),
+                k -> new DominantCounter(s.copyWithCount(1))
+            );
+            counter.slots++;
+        }
+
+        DominantCounter best = null;
+        for (DominantCounter counter : counts.values()) {
+            if (best == null || counter.slots > best.slots) {
+                best = counter;
+            }
+        }
+
+        ItemStack result = (best != null) ? best.stack : ItemStack.EMPTY;
+        dominantCache.put(containerStack, new CachedDominant(data, result));
+        return result;
+    }
+
+    public void renderIconOverlay(DrawContext context, ItemStack stack, int px, int py) {
+        if (!this.isActive() || this.drawingOverlay || stack.isEmpty()) return;
+
+        ItemStack dominant = getDominantItem(stack);
+        if (dominant.isEmpty()) return;
+
+        int size = this.iconSize.get();
+        float scale = size / 16.0F;
+        int ox = px + (16 - size) / 2 + this.xOffset.get();
+        int oy = py + (16 - size) / 2 + this.yOffset.get();
+
+        this.drawingOverlay = true;
+        try {
+            var matrices = context.getMatrices();
+            matrices.push();
+            matrices.translate(ox, oy, 200.0F);
+            matrices.scale(scale, scale, 1.0F);
+            context.drawItem(dominant, 0, 0);
+            matrices.pop();
+        } finally {
+            this.drawingOverlay = false;
+        }
+    }
+
+    private static class DominantCounter {
+        private final ItemStack stack;
+        private int slots = 0;
+
+        private DominantCounter(ItemStack stack) {
+            this.stack = stack;
+        }
+    }
+
+    public static boolean isShulker(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() instanceof ShulkerBoxBlock;
+    }
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
@@ -668,8 +904,6 @@ public class Inventory101 extends Module {
         tickAutoDrop();
     }
 
-    // ─────────────────────── Auto Tool ───────────────────────
-
     private void tickAutoTool() {
         if (!autoTool.get()) return;
         if (mc.interactionManager.isBreakingBlock()) {
@@ -695,8 +929,6 @@ public class Inventory101 extends Module {
             prevSlotAutoTool = -1;
         }
     }
-
-    // ─────────────────────── Mouse Interactions ───────────────────────
 
     private void tickMouseInteractions() {
         if (!(mc.currentScreen instanceof HandledScreen<?> screen)) {
@@ -750,8 +982,6 @@ public class Inventory101 extends Module {
                     double deltaY = mouseY - lastMouseY;
                     double dist   = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
                     
-                    // Only interpolate if moving roughly horizontally (staying in the same row).
-                    // This catches fast horizontal drags without clipping into rows above/below.
                     if (dist > 1 && Math.abs(deltaY) < 14) {
                         int steps = (int) Math.ceil(dist / 2.0);
                         for (int i = 0; i <= steps; i++) {
@@ -766,8 +996,6 @@ public class Inventory101 extends Module {
                     }
                 }
                 
-                // Always ensure the currently focused slot is processed.
-                // This catches fast vertical/diagonal movements safely without missing the target.
                 Slot focused = getFocusedSlot(screen);
                 if (focused != null && focused.hasStack() && !processedInDrag.contains(focused.id)) {
                     mc.interactionManager.clickSlot(screen.getScreenHandler().syncId, focused.id, 0, SlotActionType.QUICK_MOVE, mc.player);
@@ -787,8 +1015,6 @@ public class Inventory101 extends Module {
             wasClicking = false;
         }
     }
-
-    // ─────────────────────── Regear Logic ───────────────────────
 
     private boolean performRegearStep() {
         if (!(mc.player.currentScreenHandler instanceof ShulkerBoxScreenHandler handler)) return false;
@@ -816,9 +1042,6 @@ public class Inventory101 extends Module {
                     if (shulkerStack.isOf(Items.ELYTRA) && isLowDurabilityElytra(shulkerStack)) continue;
 
                     if (presetSlot == 36) {
-                        // Offhand slot is not in ShulkerBoxScreenHandler's slot list,
-                        // so InvUtils.move().toOffhand() silently fails. Use quickMove
-                        // (shift-click) instead — the server auto-places totems in offhand.
                         quickMove(j);
                     } else {
                         int armorIndex = switch (presetSlot) {
@@ -826,9 +1049,6 @@ public class Inventory101 extends Module {
                             default -> -1;
                         };
                         if (armorIndex == -1) continue;
-                        // Armor slots are not in ShulkerBoxScreenHandler's slot list,
-                        // so InvUtils.move().toArmor() silently fails. Use quickMove
-                        // (shift-click) instead — the server auto-equips armor items.
                         quickMove(j);
                     }
                     return true;
@@ -902,9 +1122,6 @@ public class Inventory101 extends Module {
                     if (shulkerStack.isEmpty()) continue;
                     var equippable = shulkerStack.get(DataComponentTypes.EQUIPPABLE);
                     if (equippable != null && equippable.slot() == slot) {
-                        // Armor slots are not in ShulkerBoxScreenHandler's slot list,
-                        // so InvUtils.move().toArmor() silently fails. Use quickMove
-                        // (shift-click) instead — the server auto-equips armor items.
                         quickMove(j);
                         return true;
                     }
@@ -920,9 +1137,6 @@ public class Inventory101 extends Module {
         if (!offhand.isOf(Items.TOTEM_OF_UNDYING)) {
             for (int j = 0; j < 27; j++) {
                 if (handler.getSlot(j).getStack().isOf(Items.TOTEM_OF_UNDYING)) {
-                    // Offhand slot is not in ShulkerBoxScreenHandler's slot list,
-                    // so InvUtils.move().toOffhand() silently fails. Use quickMove
-                    // (shift-click) instead — the server auto-places totems in offhand.
                     quickMove(j);
                     return true;
                 }
@@ -941,38 +1155,20 @@ public class Inventory101 extends Module {
         };
     }
 
-    // ─────────────────────── Replenish (Restock) Logic ───────────────────────
-
-    /** Snapshot of an item's state in the player's inventory. */
     private static class InvItemState {
-        int totalCount = 0;         // total item count across all inventory stacks
-        int partialSlotId = -1;     // handler slot ID of first partial stack, or -1
-        int partialCount = 0;       // item count in the partial stack
-        int maxCount = 64;          // max stack size for this item
-        int badElytraSlotId = -1;   // handler slot ID of first bad elytra, or -1
+        int totalCount = 0;
+        int partialSlotId = -1;
+        int partialCount = 0;
+        int maxCount = 64;
+        int badElytraSlotId = -1;
     }
 
-    /**
-     * Performs one step of the restock process.
-     *
-     * Flow:
-     *   1. Scan the shulker box — identify which whitelisted items are available and where
-     *   2. Scan the player's inventory — determine current stack counts, partials, and bad elytras
-     *   3. Execute the highest-priority move:
-     *      a. Elytra durability swaps (replace damaged elytra with good ones from shulker)
-     *      b. Top up partial stacks (fill incomplete inventory stacks from shulker)
-     *      c. Pull new stacks (bring items up to the target stack count)
-     *
-     * Returns true if an action was taken (caller should wait for the delay),
-     * false if restock is complete.
-     */
     private boolean performReplenishStep() {
         if (!(mc.player.currentScreenHandler instanceof ShulkerBoxScreenHandler handler)) return false;
 
         List<Item> whitelist = getReplenishWhitelist();
         if (whitelist.isEmpty()) return false;
 
-        // ── 1. Scan shulker: find which whitelisted items are available and where ──
         Map<Item, List<Integer>> shulkerSlots = new LinkedHashMap<>();
         for (int j = 0; j < 27; j++) {
             ItemStack stack = handler.getSlot(j).getStack();
@@ -982,7 +1178,6 @@ public class Inventory101 extends Module {
             }
         }
 
-        // ── 2. Scan inventory: count full stacks, locate partials, and find bad elytras ──
         Map<Item, InvItemState> invState = new LinkedHashMap<>();
         boolean hasEmptyInvSlot = false;
         for (int i = 27; i < 63; i++) {
@@ -996,7 +1191,6 @@ public class Inventory101 extends Module {
             state.maxCount = stack.getMaxCount();
 
             if (isBadElytra(stack)) {
-                // Bad elytras are NOT counted — they need replacing
                 state.badElytraSlotId = i;
                 continue;
             }
@@ -1008,24 +1202,17 @@ public class Inventory101 extends Module {
             }
         }
 
-        // ── 3a. Elytra handling (durability swaps + pulling to meet target) ──
         if (whitelist.contains(Items.ELYTRA)) {
             if (handleElytraSwaps(handler, shulkerSlots.getOrDefault(Items.ELYTRA, List.of()))) return true;
         }
 
-        // ── 3b. Top up partial stacks from shulker ──
-        //    If the shulker stack fits entirely into the remaining space, use quickMove (1 click).
-        //    Otherwise use smartMove to split: pick up from shulker, merge onto partial,
-        //    put remainder back. This always works even with a full inventory.
-        //    Respects the per-item pull limit for this session.
         for (Item item : whitelist) {
-            if (item == Items.ELYTRA) continue; // elytra is max stack 1, no top-up needed
+            if (item == Items.ELYTRA) continue;
             List<Integer> slots = shulkerSlots.get(item);
             if (slots == null) continue;
             InvItemState state = invState.get(item);
             if (state == null || state.partialSlotId == -1) continue;
 
-            // Check pull limit for this session
             int pullLimit = getPullLimit(item);
             int alreadyPulled = pulledThisSession.getOrDefault(item, 0);
             if (alreadyPulled >= pullLimit) continue;
@@ -1048,18 +1235,11 @@ public class Inventory101 extends Module {
             }
         }
 
-        // ── 3c. Pull new stacks from shulker ──
-        //    Pulls items until the per-session pull limit is reached:
-        //      Single → 1 stack (1 totem, 64 obsidian, etc.)
-        //      Fill   → fill inventory (no limit)
-        //      Custom → N items
-        //    Elytra is skipped here — all elytra logic is in handleElytraSwaps (step 3a).
         for (Item item : whitelist) {
             if (item == Items.ELYTRA) continue;
             List<Integer> slots = shulkerSlots.get(item);
             if (slots == null) continue;
 
-            // Check pull limit for this session
             int pullLimit = getPullLimit(item);
             int alreadyPulled = pulledThisSession.getOrDefault(item, 0);
             if (alreadyPulled >= pullLimit) continue;
@@ -1082,26 +1262,7 @@ public class Inventory101 extends Module {
         return false;
     }
 
-    /**
-     * Handles ALL elytra replenish logic:
-     *   1. Swap inventory elytras for better ones from shulker (worst goes back to shulker)
-     *   2. Pull elytras from shulker to meet the target-stacks count
-     *   3. Deposit low-durability inventory elytras into empty shulker slots (cleanup)
-     *
-     * IMPORTANT: This method completely IGNORES the armor slot. The equipped elytra
-     * is counted toward the target but is NEVER moved, swapped, or touched. The
-     * reason is that quickMove (shift-click) on an elytra auto-equips it instead
-     * of placing it in the inventory, and shift-clicking an elytra from inventory
-     * auto-equips it instead of moving it to the shulker. This causes elytras to
-     * bounce between the armor slot and inventory/shulker, blocking all replenish.
-     *
-     * Only smartMove is used for elytras — it explicitly targets a specific slot,
-     * bypassing the auto-equip behavior entirely.
-     *
-     * Returns true if an action was taken.
-     */
     private boolean handleElytraSwaps(ShulkerBoxScreenHandler handler, List<Integer> elytraSlots) {
-        // ── Find the best (highest remaining durability) elytra in the shulker ──
         int bestShulkerSlot = -1;
         int bestShulkerDurability = -1;
         for (int slot : elytraSlots) {
@@ -1114,17 +1275,6 @@ public class Inventory101 extends Module {
             }
         }
 
-        // ── 1. Swap inventory elytras for better ones from shulker ──
-        //    Find the worst elytra in the player's inventory (NOT armor slot).
-        //    If the shulker's best is better, smartMove-swap it. The 3-click
-        //    swap naturally sends the worse elytra back to the shulker slot.
-        //    The swap counts as 1 pull toward the session limit — it extracts
-        //    a good elytra from the shulker even though a bad one goes back.
-        //    This prevents step 2 from pulling a SECOND elytra on the next
-        //    tick (which would give the player double the intended amount).
-        //    smartMove is used instead of quickMove because quickMove on an
-        //    elytra auto-equips it to the armor slot instead of placing it in
-        //    the inventory.
         if (bestShulkerSlot != -1) {
             int worstInvSlot = -1;
             int worstInvDurability = Integer.MAX_VALUE;
@@ -1144,17 +1294,9 @@ public class Inventory101 extends Module {
             }
         }
 
-        // ── 2. Pull elytras up to session pull limit ──
-        //    Mode caps: Single = 1 elytra, Fill = fill inventory, Custom = N elytras.
-        //    Tracks how many have been pulled this replenish session.
-        //    Pull from shulker into an empty inventory slot using smartMove
-        //    (not quickMove, which would auto-equip).
-        //    If no empty inventory slot, we can't pull — quickMove would
-        //    trigger auto-equip and bounce the elytra around.
         int elytraPullLimit = getPullLimit(Items.ELYTRA);
         int elytrasPulled = pulledThisSession.getOrDefault(Items.ELYTRA, 0);
         if (elytrasPulled < elytraPullLimit) {
-            // Prefer a good (above threshold) elytra from shulker
             int goodSlot = -1;
             for (int slot : elytraSlots) {
                 ItemStack stack = handler.getSlot(slot).getStack();
@@ -1164,15 +1306,12 @@ public class Inventory101 extends Module {
                 }
             }
 
-            // Check if player has any elytras at all (for fallback)
             boolean hasAnyElytra = false;
             if (mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) hasAnyElytra = true;
             for (int i = 27; i < 63; i++) {
                 if (handler.getSlot(i).getStack().isOf(Items.ELYTRA)) { hasAnyElytra = true; break; }
             }
 
-            // If no good elytra available but player has NONE at all, pull the best
-            // bad one — a damaged elytra is still better than no elytra.
             int pullSlot = goodSlot != -1 ? goodSlot : (!hasAnyElytra ? bestShulkerSlot : -1);
 
             if (pullSlot != -1) {
@@ -1186,11 +1325,6 @@ public class Inventory101 extends Module {
             }
         }
 
-        // ── 3. Deposit low-durability inventory elytras into empty shulker slots ──
-        //    After all swaps and pulls are done, clean up by moving any remaining
-        //    bad elytras from inventory into empty shulker slots. Use smartMove
-        //    (not quickMove) because quickMove on an elytra from inventory
-        //    auto-equips it to the armor slot instead of moving to the shulker.
         for (int i = 27; i < 63; i++) {
             ItemStack invStack = handler.getSlot(i).getStack();
             if (!invStack.isOf(Items.ELYTRA) || !isLowDurabilityElytra(invStack)) continue;
@@ -1200,18 +1334,15 @@ public class Inventory101 extends Module {
                     return true;
                 }
             }
-            break; // Shulker full — can't deposit more
+            break;
         }
 
         return false;
     }
 
-    /** Whether this stack is a low-durability elytra (should be replaced, not counted). */
     private boolean isBadElytra(ItemStack stack) {
         return stack.isOf(Items.ELYTRA) && isLowDurabilityElytra(stack);
     }
-
-    // ─────────────────────── Inv Sort ───────────────────────
 
     private boolean performInvSortStep() {
         List<ItemStack> preset = getPreset(invSortPreset);
@@ -1259,8 +1390,6 @@ public class Inventory101 extends Module {
         return false;
     }
 
-    // ─────────────────────── Container Sort ───────────────────────
-
     private boolean performSortStep() {
         if (!(mc.player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) return false;
         int invSize = handler.getRows() * 9;
@@ -1281,8 +1410,6 @@ public class Inventory101 extends Module {
         return false;
     }
 
-    // ─────────────────────── Trash ───────────────────────
-
     private boolean performTrashStep() {
         if (mc.player.currentScreenHandler == null) return false;
         ScreenHandler handler = mc.player.currentScreenHandler;
@@ -1297,16 +1424,6 @@ public class Inventory101 extends Module {
         return false;
     }
 
-    // ─────────────────────── Utility Helpers ───────────────────────
-
-    /**
-     * Smart move — moves an item from one slot to another using the fewest clicks possible.
-     *
-     * Three strategies (picked automatically):
-     *   1. Target is empty            → 2 clicks (pickup + place) — saves 1 click vs old move()
-     *   2. Target has a different item → 3 clicks (pickup + place + put-back) — full swap
-     *   3. Cursor already holding     → abort (prevents item loss)
-     */
     private void smartMove(int from, int to) {
         if (mc.interactionManager == null || mc.player == null) return;
         ScreenHandler handler = mc.player.currentScreenHandler;
@@ -1315,23 +1432,15 @@ public class Inventory101 extends Module {
 
         ItemStack targetStack = handler.getSlot(to).getStack();
         if (targetStack.isEmpty()) {
-            // Target is empty — just pick up and place (2 clicks)
             mc.interactionManager.clickSlot(syncId, from, 0, SlotActionType.PICKUP, mc.player);
             mc.interactionManager.clickSlot(syncId, to,   0, SlotActionType.PICKUP, mc.player);
         } else {
-            // Target has an item — full 3-click swap
             mc.interactionManager.clickSlot(syncId, from, 0, SlotActionType.PICKUP, mc.player);
             mc.interactionManager.clickSlot(syncId, to,   0, SlotActionType.PICKUP, mc.player);
             mc.interactionManager.clickSlot(syncId, from, 0, SlotActionType.PICKUP, mc.player);
         }
     }
 
-    /**
-     * Quick move (shift-click) — 1 click, server decides the destination.
-     * Best for moving items between inventories (shulker ↔ player)
-     * when we don't care about the exact target slot.
-     * The server automatically merges partial stacks first, then uses empty slots.
-     */
     private void quickMove(int slot) {
         if (mc.interactionManager == null || mc.player == null) return;
         mc.interactionManager.clickSlot(
@@ -1369,8 +1478,6 @@ public class Inventory101 extends Module {
     private boolean isBusy() {
         return isSorting || isTrashing || isReplenishing || isRegearing || isInvSorting;
     }
-
-    // ─────────────────────── Preset Save / Load ───────────────────────
 
     private void saveInventory(int index) {
         NbtCompound nbt  = new NbtCompound();
@@ -1425,8 +1532,6 @@ public class Inventory101 extends Module {
         }
         return items;
     }
-
-    // ─────────────────────── Slot / Item Helpers ───────────────────────
 
     private Slot getSlotAt(HandledScreen<?> screen, double mouseX, double mouseY) {
         double scaledMouseX = mouseX * mc.getWindow().getScaledWidth() / (double) mc.getWindow().getWidth();

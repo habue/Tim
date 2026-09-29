@@ -31,7 +31,6 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.FluidBlock;
@@ -523,6 +522,15 @@ public class Datamine extends Module {
         BlockPos basePos = this.mc.player.getBlockPos();
         Direction facing = this.mc.player.getHorizontalFacing();
 
+        // Leave Excavator mode untouched
+        if (this.nukerMode.get() == NukerMode.Excavator) {
+            this.doExcavating();
+            return;
+        }
+
+        int queuedCount = 0;
+        int maxQueuePerTick = 2; // Target dual-break capacity for tunnel and hole
+
         if (this.nukerMode.get() == NukerMode.Tunnel) {
             int width = 1, height = 2;
             TunnelShape shape = this.tunnelShape.get();
@@ -533,24 +541,43 @@ public class Datamine extends Module {
 
             int halfW = width / 2;
 
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height && queuedCount < maxQueuePerTick; y++) {
+                for (int x = 0; x < width && queuedCount < maxQueuePerTick; x++) {
                     int offsetX = x - halfW;
-                    int offsetY = y; // Start at feet level and go up
+                    int offsetY = y; 
                     BlockPos pos = this.getTunnelPos(basePos, facing, offsetX, offsetY);
-                    this.tryMine(pos);
+                    
+                    if (this.tryQueueMine(pos)) {
+                        queuedCount++;
+                    }
                 }
             }
         } else if (this.nukerMode.get() == NukerMode.Hole) {
-            for (int x = -1; x <= 1; x++) {
-                for (int z = -1; z <= 1; z++) {
+            for (int x = -1; x <= 1 && queuedCount < maxQueuePerTick; x++) {
+                for (int z = -1; z <= 1 && queuedCount < maxQueuePerTick; z++) {
                     BlockPos pos = basePos.add(x, -1, z);
-                    this.tryMine(pos);
+                    if (this.tryQueueMine(pos)) {
+                        queuedCount++;
+                    }
                 }
             }
-        } else if (this.nukerMode.get() == NukerMode.Excavator) {
-            this.doExcavating();
         }
+    }
+
+    private boolean tryQueueMine(BlockPos pos) {
+        if (pos == null) return false;
+        if (this.isTracked(pos)) return false;
+
+        BlockState state = this.mc.world.getBlockState(pos);
+        if (state.isAir() || state.getBlock() instanceof FluidBlock) return false;
+        if (!this.isBlockAllowed(state.getBlock())) return false;
+        if (!this.breakable(pos, state)) return false;
+
+        if (this.queue.size() >= 2) return false;
+
+        Direction side = this.face(pos, Direction.UP);
+        this.mine(pos, side);
+        return true;
     }
 
     private BlockPos getTunnelPos(BlockPos base, Direction facing, int offsetX, int offsetY) {
@@ -559,21 +586,6 @@ public class Datamine extends Module {
         if (facing == Direction.WEST) return base.add(-1, offsetY, offsetX);
         if (facing == Direction.EAST) return base.add(1, offsetY, offsetX);
         return base;
-    }
-
-    private void tryMine(BlockPos pos) {
-        if (pos == null) return;
-        if (this.isTracked(pos)) return;
-
-        BlockState state = this.mc.world.getBlockState(pos);
-        if (state.isAir() || state.getBlock() instanceof FluidBlock) return;
-
-        if (!this.isBlockAllowed(state.getBlock())) return;
-
-        if (!this.breakable(pos, state)) return;
-
-        Direction side = this.face(pos, Direction.UP);
-        this.mine(pos, side);
     }
 
     private boolean isBlockAllowed(Block block) {
@@ -587,7 +599,6 @@ public class Datamine extends Module {
 
     // --- Excavator Logic ---
     private void doExcavating() {
-        // Pause Baritone if we are actively mining something
         if (this.primary != null || this.secondary != null || !this.queue.isEmpty()) {
             if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
                 BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().forceCancel();
@@ -595,28 +606,24 @@ public class Datamine extends Module {
             return;
         }
 
-        // Find a new target if we don't have one or the current one is invalid
         if (this.excavatorTarget == null || !this.isExcavatable(this.excavatorTarget)) {
             this.excavatorTarget = this.findExcavatorTarget();
         }
 
         if (this.excavatorTarget == null) {
-            // No targets found, stop Baritone
             if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
                 BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().forceCancel();
             }
             return;
         }
 
-        // If we are close enough to mine it, cancel Baritone and queue the block
         if (this.reachable(this.excavatorTarget)) {
             if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
                 BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().forceCancel();
             }
-            this.tryMine(this.excavatorTarget);
-            this.excavatorTarget = null; // Look for next target next tick
+            this.tryMineExcavator(this.excavatorTarget);
+            this.excavatorTarget = null; 
         } else {
-            // Path to the target if we aren't already
             if (!BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
                 GoalNear goal = new GoalNear(this.excavatorTarget, 1);
                 BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(goal);
@@ -624,10 +631,22 @@ public class Datamine extends Module {
         }
     }
 
+    private void tryMineExcavator(BlockPos pos) {
+        if (pos == null) return;
+        if (this.isTracked(pos)) return;
+
+        BlockState state = this.mc.world.getBlockState(pos);
+        if (state.isAir() || state.getBlock() instanceof FluidBlock) return;
+        if (!this.isBlockAllowed(state.getBlock())) return;
+        if (!this.breakable(pos, state)) return;
+
+        Direction side = this.face(pos, Direction.UP);
+        this.mine(pos, side);
+    }
+
     private boolean isExcavatable(BlockPos pos) {
         if (pos == null) return false;
         
-        // Prevent mining any floor blocks if the player is on the ground
         if (this.excavatorIgnoreFloor.get() && this.mc.player.isOnGround()) {
             if (pos.getY() < this.mc.player.getBlockPos().getY()) {
                 return false;
@@ -636,8 +655,8 @@ public class Datamine extends Module {
 
         BlockState state = this.mc.world.getBlockState(pos);
         if (state.isAir() || state.getBlock() instanceof FluidBlock) return false;
-        if (state.getHardness(this.mc.world, pos) < 0.0F) return false; // Unbreakable
-        if (this.blockList.get().isEmpty()) return false; // Strictly whitelist only
+        if (state.getHardness(this.mc.world, pos) < 0.0F) return false; 
+        if (this.blockList.get().isEmpty()) return false; 
         return this.blockList.get().contains(state.getBlock());
     }
 
@@ -806,7 +825,6 @@ public class Datamine extends Module {
             this.ready += (confirmed ? 50L : BURST_PAUSE);
         }
 
-        // Revert slot if the target was removed while arming
         if (target.arming && this.swapped) {
             this.revertSlot();
         }
@@ -824,7 +842,6 @@ public class Datamine extends Module {
         return false;
     }
 
-    // --- Server Block Update Hook ---
     public void onServerBlockUpdate(BlockPos pos, BlockState state) {
         if (pos == null || state == null) return;
         BlockPos immutablePos = pos.toImmutable();
@@ -856,7 +873,6 @@ public class Datamine extends Module {
         }
     }
 
-    // --- Vanilla Bypass ---
     public boolean bypass(BlockPos pos) {
         if (this.mc.player == null ||
             this.mc.world == null || pos == null ||
@@ -874,7 +890,6 @@ public class Datamine extends Module {
         return delta >= 1.0F / this.vanilla.get();
     }
 
-    // --- Mining Logic ---
     private void begin(Target target) {
         target.side = this.face(target.pos, target.side);
         target.slot = this.best(target.state, target.pos);
@@ -886,7 +901,6 @@ public class Datamine extends Module {
         if (this.swapped) {
             target.arming = true;
             target.arm = this.tick + this.toolSyncDelay.get();
-            // Do NOT revert slot here. We want the server to keep the tool equipped during arming.
             return;
         }
 
@@ -1092,7 +1106,6 @@ public class Datamine extends Module {
         return true;
     }
 
-    // --- Math & Calculations ---
     private double progress(Target target) {
         if (target.finished) return 1.0;
 
@@ -1142,7 +1155,6 @@ public class Datamine extends Module {
         return Math.min(1.0, work / limit);
     }
 
-    // --- Tool & Packet Logic ---
     private int best(BlockState state, BlockPos pos) {
         int selected = Hotbar.selected();
         int best = selected;
@@ -1203,8 +1215,6 @@ public class Datamine extends Module {
 
         this.swapped = true;
 
-        // Normal mode updates the client slot and sends the packet
-        // Silent mode only sends the packet to the server
         if (this.swapMode.get() == SwapMode.Normal) {
             Hotbar.set(slot);
         }
@@ -1215,7 +1225,6 @@ public class Datamine extends Module {
     private void revertSlot() {
         if (!this.swapped || this.swapMode.get() != SwapMode.Silent) return;
         
-        // Re-syncs the actual client slot to the server
         Hotbar.sync(Hotbar.selected());
         this.swapped = false;
     }
@@ -1238,7 +1247,6 @@ public class Datamine extends Module {
         return new BlockPos(pos.getX(), FAKE_BLOCK_HEIGHT, pos.getZ());
     }
 
-    // --- Block Targeting & Validation ---
     private Direction face(BlockPos pos, Direction fallback) {
         Vec3d eye = this.mc.player.getEyePos();
 
@@ -1313,7 +1321,6 @@ public class Datamine extends Module {
         return dx * dx + dy * dy + dz * dz <= REACH * REACH;
     }
 
-    // --- Auto-Collect Logic ---
     private void checkForNewItems() {
         if (!this.autoCollect.get() || this.mc.player == null || this.mc.world == null) return;
 
@@ -1344,7 +1351,7 @@ public class Datamine extends Module {
         long currentTime = System.currentTimeMillis();
         long elapsedMs = currentTime - this.lastMineTime;
         long gracePeriodMs = this.gracePeriod.get() * 1000L;
-        long collectDelayMs = this.collectDelay.get() * 50L; // Convert ticks to ms
+        long collectDelayMs = this.collectDelay.get() * 50L; 
 
         if (this.primary != null || this.secondary != null || !this.queue.isEmpty()) {
             if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
@@ -1392,7 +1399,6 @@ public class Datamine extends Module {
         }
     }
 
-    // --- Rendering Logic ---
     private void renderTarget(Render3DEvent event, Target target, SettingColor color) {
         double offset = (1.0 - this.visual(target)) / 2.0;
 

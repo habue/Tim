@@ -47,6 +47,10 @@ public final class GlowingRegistry {
         return GLOWING_IDS.containsKey(entityId);
     }
 
+    public static boolean isEmpty() {
+        return GLOWING_IDS.isEmpty();
+    }
+
     /**
      * Returns the packed ARGB color for this entity, or DEFAULT_COLOR if not
      * registered. Always call isGlowing() first if you only want to act on

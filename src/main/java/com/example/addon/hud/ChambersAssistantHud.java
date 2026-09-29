@@ -31,31 +31,17 @@ public class ChambersAssistantHud extends HudElement {
 
     private static final MinecraftClient mc = MinecraftClient.getInstance();
 
-    // ── Setting Groups ────────────────────────────────────────────────────────
-
-    private final SettingGroup sgGeneral    = settings.getDefaultGroup();
+    private final SettingGroup sgGeneral   = settings.getDefaultGroup();
     private final SettingGroup sgCategories = settings.createGroup("Categories");
     private final SettingGroup sgWarnings   = settings.createGroup("Warnings");
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Enums
-    // ═══════════════════════════════════════════════════════════════════════════
-
     public enum DisplayMode { Vertical, Flat }
-
     public enum Alignment { Left, Center, Right }
-
     public enum LabelMode { Text, Icon, Both }
-
     public enum IconPosition { Left, Right, Above, Below }
-
     public enum StatSeverity { Normal, Warning, Critical }
 
     public record ChamberStat(String name, int count, ItemStack icon, StatSeverity severity) {}
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // General Settings
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private final Setting<DisplayMode> displayMode = sgGeneral.add(new EnumSetting.Builder<DisplayMode>()
         .name("display-mode")
@@ -99,7 +85,7 @@ public class ChambersAssistantHud extends HudElement {
         .description("Scale of the item icons.")
         .defaultValue(1.5).min(0.5).sliderRange(0.5, 4.0)
         .visible(() -> displayMode.get() == DisplayMode.Flat
-               || (displayMode.get() == DisplayMode.Vertical && labelMode.get() != LabelMode.Text))
+                || (displayMode.get() == DisplayMode.Vertical && labelMode.get() != LabelMode.Text))
         .build()
     );
 
@@ -162,10 +148,6 @@ public class ChambersAssistantHud extends HudElement {
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Category Toggles
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<Boolean> showSpawners = sgCategories.add(new BoolSetting.Builder()
         .name("show-spawners").description("Track normal Trial Spawners.").defaultValue(true).build()
     );
@@ -198,10 +180,6 @@ public class ChambersAssistantHud extends HudElement {
         .name("show-keys").description("Track dropped Trial Keys/Bottles.").defaultValue(true).build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Warning Colors
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final Setting<SettingColor> warningColor = sgWarnings.add(new ColorSetting.Builder()
         .name("warning-color")
         .description("Color shown when a dangerous stat (e.g. Ominous Spawners, Breezes) is > 0.")
@@ -216,26 +194,16 @@ public class ChambersAssistantHud extends HudElement {
         .build()
     );
 
-    // ── Constructor ───────────────────────────────────────────────────────────
-
     public ChambersAssistantHud() {
         super(INFO);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Internal slot descriptor
-    // ─────────────────────────────────────────────────────────────────────────
-
     private record StatRow(
-        ItemStack    stack,
-        String       label,
-        String       value,
+        ItemStack stack,
+        String label,
+        String value,
         SettingColor valueCol
     ) {}
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Render entry point
-    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     public void render(HudRenderer renderer) {
@@ -249,14 +217,14 @@ public class ChambersAssistantHud extends HudElement {
 
         List<StatRow> rows = new ArrayList<>();
         
-        if (showSpawners.get())         addStat(rows, stats.get(0), showText);
+        if (showSpawners.get())        addStat(rows, stats.get(0), showText);
         if (showOminousSpawners.get())  addStat(rows, stats.get(1), showText);
-        if (showVaults.get())           addStat(rows, stats.get(2), showText);
+        if (showVaults.get())          addStat(rows, stats.get(2), showText);
         if (showOminousVaults.get())    addStat(rows, stats.get(3), showText);
-        if (showPots.get())             addStat(rows, stats.get(4), showText);
-        if (showChests.get())           addStat(rows, stats.get(5), showText);
-        if (showBreezes.get())          addStat(rows, stats.get(6), showText);
-        if (showKeys.get())             addStat(rows, stats.get(7), showText);
+        if (showPots.get())            addStat(rows, stats.get(4), showText);
+        if (showChests.get())          addStat(rows, stats.get(5), showText);
+        if (showBreezes.get())         addStat(rows, stats.get(6), showText);
+        if (showKeys.get())            addStat(rows, stats.get(7), showText);
 
         if (rows.isEmpty()) { setSize(0, 0); return; }
 
@@ -281,17 +249,13 @@ public class ChambersAssistantHud extends HudElement {
         rows.add(new StatRow(stat.icon(), label, value, col));
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // FLAT render
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void renderFlat(HudRenderer renderer, List<StatRow> rows) {
-        double s          = scale.get();
-        double padH       = 4 * s;
-        double padV       = 2 * s;
-        double colGap     = flatSlotGap.get() * s;
-        double lineHeight = renderer.textHeight(false, s);
-        double textIconGap = 2 * s;
+        double s            = scale.get();
+        double padH         = 4 * s;
+        double padV         = 2 * s;
+        double colGap       = flatSlotGap.get() * s;
+        double lineHeight   = renderer.textHeight(false, s);
+        double textIconGap  = 2 * s;
 
         boolean drawIcon = flatShowIcon.get();
         double  iconSz   = drawIcon ? 16.0 * iconScale.get() : 0;
@@ -339,18 +303,14 @@ public class ChambersAssistantHud extends HudElement {
         setSize(totalW, totalH);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // VERTICAL render
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void renderVertical(HudRenderer renderer, List<StatRow> rows) {
-        double s          = scale.get();
-        double padH       = 4 * s;
-        double padV       = 2 * s;
-        double rowGap     = 2 * s;
-        double lineHeight = renderer.textHeight(false, s);
-        double iconSz     = 16.0 * iconScale.get();
-        double iconGap    = iconGapSetting.get() * s;
+        double s            = scale.get();
+        double padH         = 4 * s;
+        double padV         = 2 * s;
+        double rowGap       = 2 * s;
+        double lineHeight   = renderer.textHeight(false, s);
+        double iconSz       = 16.0 * iconScale.get();
+        double iconGap      = iconGapSetting.get() * s;
 
         LabelMode    mode     = labelMode.get();
         IconPosition iconPos  = iconPosition.get();
@@ -367,8 +327,6 @@ public class ChambersAssistantHud extends HudElement {
         } else {
             statRowH = Math.max(lineHeight, iconSz);
         }
-
-        // ── Measure ───────────────────────────────────────────────────────────
 
         double[] rowWidths  = new double[rows.size()];
         double[] textWidths = new double[rows.size()];
@@ -401,8 +359,6 @@ public class ChambersAssistantHud extends HudElement {
             + rows.size() * statRowH
             + Math.max(0, rows.size() - 1) * rowGap;
 
-        // ── Draw ──────────────────────────────────────────────────────────────
-
         Alignment align      = alignment.get();
         boolean   rightAlign = align == Alignment.Right;
         boolean   centAlign  = align == Alignment.Center;
@@ -424,19 +380,15 @@ public class ChambersAssistantHud extends HudElement {
         setSize(totalW, totalH);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Draw a single vertical stat row
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void drawVerticalStatRow(HudRenderer renderer, double s,
-                                     double rx, double ry, double totalW, double padH,
-                                     double rowH, double lineHeight,
-                                     boolean rightAlign, boolean centerAlign,
-                                     double lineW, double textW,
-                                     ItemStack icon, double iconSz, double iconGap,
-                                     IconPosition iconPos,
-                                     String label, String value,
-                                     SettingColor lColor, SettingColor vColor) {
+                                   double rx, double ry, double totalW, double padH,
+                                   double rowH, double lineHeight,
+                                   boolean rightAlign, boolean centerAlign,
+                                   double lineW, double textW,
+                                   ItemStack icon, double iconSz, double iconGap,
+                                   IconPosition iconPos,
+                                   String label, String value,
+                                   SettingColor lColor, SettingColor vColor) {
 
         boolean hasIcon = !icon.isEmpty();
 
@@ -444,7 +396,6 @@ public class ChambersAssistantHud extends HudElement {
             renderer.quad(rx, ry - 1, totalW, rowH + 2, backgroundColor.get());
 
         if (!hasIcon || iconPos == IconPosition.Left || iconPos == IconPosition.Right) {
-            // ── Horizontal arrangement ────────────────────────────────────────
             double textY = ry + (rowH - lineHeight) / 2.0;
             double iconY = ry + (rowH - iconSz)     / 2.0;
 
@@ -487,7 +438,6 @@ public class ChambersAssistantHud extends HudElement {
             }
 
         } else {
-            // ── Vertical arrangement (Above / Below) ──────────────────────────
             double iconY, textY;
             if (iconPos == IconPosition.Above) {
                 iconY = ry;

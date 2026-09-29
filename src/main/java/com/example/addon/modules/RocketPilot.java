@@ -1807,13 +1807,13 @@ public class RocketPilot extends Module {
             nextZ = start.z + Math.sin(heading) * sideLen;
 
             drunkPolygonSide++;
-            if (drunkPolygonSide >= sides) {
+            if (polygonSide >= sides) {
                 drunkPolygonSide = 0;
                 drunkPolygonRotation++;
             }
         } else {
             double angleStep       = 2.0 * Math.PI / drunkCircleSegments.get();
-            double expansionBlocks = drunkCircleExpansion.get() * 16.0;
+            double expansionBlocks = circleExpansion.get() * 16.0;
             double b               = expansionBlocks / (2.0 * Math.PI);
             double radius          = b * drunkCircleAngle;
             nextX = drunkSpiralOrigin.x + radius * Math.cos(drunkCircleAngle);

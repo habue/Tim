@@ -17,6 +17,7 @@ import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.EntityTypeListSetting;
 import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
+import meteordevelopment.meteorclient.settings.ItemSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -30,6 +31,9 @@ import net.minecraft.entity.mob.Angerable;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.PassiveEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 
 public class Illushine extends Module {
 
@@ -57,7 +61,8 @@ public class Illushine extends Module {
     public enum CrosshairMode {
         None("None"),
         WhiteDot("White Dot"),
-        Normal("Normal");
+        Normal("Normal"),
+        CustomItem("Custom Item");
 
         private final String title;
         CrosshairMode(String title) { this.title = title; }
@@ -170,6 +175,22 @@ public class Illushine extends Module {
         .name("crosshair-thickness").description("Thickness of the crosshair lines in pixels.")
         .defaultValue(1).min(1).sliderMax(5)
         .visible(() -> crosshairMode.get() == CrosshairMode.Normal)
+        .build()
+    );
+
+    private final Setting<Item> crosshairItem = sgCrosshair.add(new ItemSetting.Builder()
+        .name("crosshair-item")
+        .description("The item to display as the crosshair.")
+        .defaultValue(Items.DIAMOND)
+        .visible(() -> crosshairMode.get() == CrosshairMode.CustomItem)
+        .build()
+    );
+
+    private final Setting<Double> crosshairItemScale = sgCrosshair.add(new DoubleSetting.Builder()
+        .name("crosshair-item-scale")
+        .description("Scale of the custom item crosshair icon.")
+        .defaultValue(1.0).min(0.25).sliderMax(3.0)
+        .visible(() -> crosshairMode.get() == CrosshairMode.CustomItem)
         .build()
     );
 
@@ -372,6 +393,7 @@ public class Illushine extends Module {
         switch (crosshairMode.get()) {
             case WhiteDot -> context.fill(cx - 1, cy - 1, cx + 1, cy + 1, 0xFFFFFFFF);
             case Normal   -> drawNormalCrosshair(context, cx, cy);
+            case CustomItem -> drawCustomItemCrosshair(context, cx, cy);
             default       -> {}
         }
     }
@@ -389,6 +411,19 @@ public class Illushine extends Module {
         context.fill(cx + gap,       cy - halfU, cx + arm + gap, cy + halfD, col);
         context.fill(cx - halfU,     cy - arm - gap, cx + halfD, cy - gap,   col);
         context.fill(cx - halfU,     cy + gap,       cx + halfD, cy + arm + gap, col);
+    }
+
+    private void drawCustomItemCrosshair(DrawContext context, int cx, int cy) {
+        Item item = crosshairItem.get();
+        if (item == null) item = Items.DIAMOND;
+        ItemStack stack = new ItemStack(item);
+
+        float scale = crosshairItemScale.get().floatValue();
+        context.getMatrices().push();
+        context.getMatrices().translate(cx - (8.0f * scale), cy - (8.0f * scale), 230.0F);
+        context.getMatrices().scale(scale, scale, 1.0F);
+        context.drawItem(stack, 0, 0);
+        context.getMatrices().pop();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -433,4 +468,4 @@ public class Illushine extends Module {
     private static int toARGB(SettingColor c) {
         return (c.a << 24) | (c.r << 16) | (c.g << 8) | c.b;
     }
-} 
+}

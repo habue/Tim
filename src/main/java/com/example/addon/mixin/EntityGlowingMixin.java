@@ -7,10 +7,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Forces isGlowing() to return true for any entity registered in GlowingRegistry.
- * This is the only reliable way to trigger Minecraft's outline shader on the client.
- */
 @Mixin(Entity.class)
 public class EntityGlowingMixin {
 
@@ -19,6 +15,15 @@ public class EntityGlowingMixin {
         Entity self = (Entity) (Object) this;
         if (GlowingRegistry.isGlowing(self.getId())) {
             cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "getTeamColorValue", at = @At("HEAD"), cancellable = true)
+    private void mobanom_overrideGlowColor(CallbackInfoReturnable<Integer> cir) {
+        Entity self = (Entity) (Object) this;
+        if (GlowingRegistry.isGlowing(self.getId())) {
+            int argb = GlowingRegistry.getColor(self.getId());
+            cir.setReturnValue(argb & 0x00FFFFFF);
         }
     }
 }
