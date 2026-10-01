@@ -1,9 +1,8 @@
 package com.example.addon.modules;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,22 +34,11 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.ChunkSection;
 
 /**
  * LavaMarker — highlights fully-flowed lava falls in the Nether.
- *
- * Supports three render modes:
- *   GLOW     – original layered bloom-box renderer (default).
- *   SPECTRAL – subtle filled box only (outline shader is entity-only;
- *              lava is a block so SPECTRAL falls back to a configurable fill).
- *   PULSE    – fading in/out layered bloom-box renderer.
  */
 public class LavaMarker extends Module {
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Enum
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public enum RenderMode {
         GLOW,
@@ -58,16 +46,11 @@ public class LavaMarker extends Module {
         PULSE
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Setting Groups
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgFilter  = settings.createGroup("Filtering & Clustering");
     private final SettingGroup sgRender  = settings.createGroup("Render");
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — General
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ── Settings — General ───────────────────────────────────────────────────
 
     private final Setting<Integer> chunkRadius = sgGeneral.add(new IntSetting.Builder()
         .name("chunk-radius")
@@ -85,7 +68,7 @@ public class LavaMarker extends Module {
 
     private final Setting<SettingColor> color = sgGeneral.add(new ColorSetting.Builder()
         .name("flowing-lava")
-        .description("Color for fully-flowed lava falls. (Alpha is used for GLOW and SPECTRAL outlines).")
+        .description("Color for fully-flowed lava falls.")
         .defaultValue(new SettingColor(255, 100, 0, 200))
         .build()
     );
@@ -93,29 +76,41 @@ public class LavaMarker extends Module {
     private final Setting<Integer> minFallHeight = sgGeneral.add(new IntSetting.Builder()
         .name("min-fall-height")
         .description("Lava falls shorter than this will be ignored.")
-        .defaultValue(5).min(0).sliderMax(32)
+        .defaultValue(6).min(1).sliderMax(32)
         .build()
     );
 
     private final Setting<Integer> maxRenderBlocks = sgGeneral.add(new IntSetting.Builder()
         .name("max-render-blocks")
-        .description("Maximum number of blocks to render per frame to prevent crashes.")
+        .description("Maximum number of blocks to render per frame to prevent lag.")
         .defaultValue(5000).min(100).sliderMax(20000)
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Settings — Render
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ── Settings — Filtering & Clustering ────────────────────────────────────
 
-    private final Setting<RenderMode> renderMode = sgRender.add(new EnumSetting.Builder<RenderMode>()
-        .name("render-mode")
-        .description("GLOW = layered bloom boxes. SPECTRAL = subtle fill box. PULSE = fading in/out highlight.")
-        .defaultValue(RenderMode.GLOW)
+    private final Setting<Boolean> onlyCompletedFalls = sgFilter.add(new BoolSetting.Builder()
+        .name("only-completed-falls")
+        .description("Only highlight falls that have completely reached the bottom.")
+        .defaultValue(true)
         .build()
     );
 
-    // ── Glow-only settings ────────────────────────────────────────────────────
+    private final Setting<Boolean> mergeTouchingWalls = sgFilter.add(new BoolSetting.Builder()
+        .name("merge-touching-walls")
+        .description("Only merge solid flat walls (shares direct side faces); keeps diagonals independent.")
+        .defaultValue(false)
+        .build()
+    );
+
+    // ── Settings — Render ────────────────────────────────────────────────────
+
+    private final Setting<RenderMode> renderMode = sgRender.add(new EnumSetting.Builder<RenderMode>()
+        .name("render-mode")
+        .description("GLOW = layered bloom boxes. SPECTRAL = subtle fill box. PULSE = fading highlight.")
+        .defaultValue(RenderMode.GLOW)
+        .build()
+    );
 
     private final Setting<Integer> glowLayers = sgRender.add(new IntSetting.Builder()
         .name("glow-layers")
@@ -135,17 +130,15 @@ public class LavaMarker extends Module {
 
     private final Setting<Integer> glowBaseAlpha = sgRender.add(new IntSetting.Builder()
         .name("glow-base-alpha")
-        .description("Opacity of the outer glow layers in GLOW mode (0-255).")
+        .description("Opacity of outer glow layers in GLOW mode (0-255).")
         .defaultValue(40).min(4).sliderMax(120)
         .visible(() -> renderMode.get() == RenderMode.GLOW)
         .build()
     );
 
-    // ── Spectral-only settings ────────────────────────────────────────────────
-
     private final Setting<Integer> spectralFillAlpha = sgRender.add(new IntSetting.Builder()
         .name("spectral-fill-alpha")
-        .description("Opacity of the fill box in SPECTRAL mode (0 = invisible, 80 = subtle).")
+        .description("Opacity of fill box in SPECTRAL mode.")
         .defaultValue(40).min(0).max(200).sliderMax(120)
         .visible(() -> renderMode.get() == RenderMode.SPECTRAL)
         .build()
@@ -159,11 +152,9 @@ public class LavaMarker extends Module {
         .build()
     );
 
-    // ── Pulse-only settings ───────────────────────────────────────────────────
-
     private final Setting<Double> pulseSpeed = sgRender.add(new DoubleSetting.Builder()
         .name("pulse-speed")
-        .description("Pulse cycle speed. 1.0 = one full fade in/out per second.")
+        .description("Pulse cycle speed in cycles/sec.")
         .defaultValue(1.0).min(0.1).max(5.0).sliderMax(3.0)
         .visible(() -> renderMode.get() == RenderMode.PULSE)
         .build()
@@ -171,7 +162,7 @@ public class LavaMarker extends Module {
 
     private final Setting<Integer> pulseMinAlpha = sgRender.add(new IntSetting.Builder()
         .name("pulse-min-alpha")
-        .description("Lowest opacity reached during the pulse (0 = invisible).")
+        .description("Lowest opacity reached during pulse.")
         .defaultValue(15).min(0).max(255).sliderMax(100)
         .visible(() -> renderMode.get() == RenderMode.PULSE)
         .build()
@@ -179,33 +170,25 @@ public class LavaMarker extends Module {
 
     private final Setting<Integer> pulseMaxAlpha = sgRender.add(new IntSetting.Builder()
         .name("pulse-max-alpha")
-        .description("Peak opacity reached during the pulse.")
+        .description("Peak opacity reached during pulse.")
         .defaultValue(220).min(15).max(255).sliderMax(255)
         .visible(() -> renderMode.get() == RenderMode.PULSE)
         .build()
     );
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // State
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ── State ────────────────────────────────────────────────────────────────
 
-    private final Map<ChunkPos, Set<BlockPos>> fallsByChunk = new ConcurrentHashMap<>();
-    private final Set<ChunkPos>                scannedChunks = ConcurrentHashMap.newKeySet();
-    private final Set<ChunkPos>                dirtyChunks   = ConcurrentHashMap.newKeySet();
+    private final Map<ChunkPos, List<LavaColumn>> rawColumnsByChunk = new ConcurrentHashMap<>();
+    private final Set<BlockPos>                   filteredRenderBlocks = ConcurrentHashMap.newKeySet();
+    private final Set<ChunkPos>                   scannedChunks = ConcurrentHashMap.newKeySet();
+    private final Set<ChunkPos>                   dirtyChunks   = ConcurrentHashMap.newKeySet();
 
     private String lastDimension = "";
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Constructor
-    // ═══════════════════════════════════════════════════════════════════════════
+    private int tickCounter = 0;
 
     public LavaMarker() {
         super(Tim.CATEGORY, "lava-marker", "Highlights fully-flowed lava falls in the Nether.");
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Lifecycle
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @Override
     public void onActivate() {
@@ -219,14 +202,12 @@ public class LavaMarker extends Module {
     }
 
     private void clearData() {
-        fallsByChunk.clear();
+        rawColumnsByChunk.clear();
+        filteredRenderBlocks.clear();
         scannedChunks.clear();
         dirtyChunks.clear();
+        tickCounter = 0;
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Tick — progressive chunk scanning
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
@@ -234,7 +215,7 @@ public class LavaMarker extends Module {
 
         String dim = mc.world.getRegistryKey().getValue().toString();
         if (!dim.equals("minecraft:the_nether")) {
-            if (!fallsByChunk.isEmpty()) clearData();
+            if (!rawColumnsByChunk.isEmpty()) clearData();
             return;
         }
         if (!dim.equals(lastDimension)) {
@@ -242,14 +223,23 @@ public class LavaMarker extends Module {
             clearData();
         }
 
+        tickCounter++;
         BlockPos playerPos = mc.player.getBlockPos();
         int radius = chunkRadius.get();
         int pX = playerPos.getX() >> 4;
         int pZ = playerPos.getZ() >> 4;
 
-        scannedChunks.removeIf(cp -> isOutOfRange(cp, pX, pZ, radius));
-        fallsByChunk.keySet().removeIf(cp -> isOutOfRange(cp, pX, pZ, radius));
+        boolean structureChanged = scannedChunks.removeIf(cp -> isOutOfRange(cp, pX, pZ, radius));
+        structureChanged |= rawColumnsByChunk.keySet().removeIf(cp -> isOutOfRange(cp, pX, pZ, radius));
         dirtyChunks.removeIf(cp -> isOutOfRange(cp, pX, pZ, radius));
+
+        if (tickCounter % 20 == 0) {
+            for (ChunkPos cp : scannedChunks) {
+                if (mc.world.getChunkManager().isChunkLoaded(cp.x, cp.z)) {
+                    dirtyChunks.add(cp);
+                }
+            }
+        }
 
         List<ChunkPos> todo = new ArrayList<>();
         for (int x = -radius; x <= radius; x++) {
@@ -266,7 +256,7 @@ public class LavaMarker extends Module {
         }));
 
         int processed = 0;
-        while (!dirtyChunks.isEmpty() && processed < 4) {
+        while (!dirtyChunks.isEmpty() && processed < 6) {
             ChunkPos cp = dirtyChunks.iterator().next();
             dirtyChunks.remove(cp);
             scannedChunks.remove(cp);
@@ -274,13 +264,19 @@ public class LavaMarker extends Module {
                 scanChunk(mc.world.getChunk(cp.x, cp.z));
                 scannedChunks.add(cp);
                 processed++;
+                structureChanged = true;
             }
         }
         for (ChunkPos cp : todo) {
-            if (processed >= 4) break;
+            if (processed >= 6) break;
             scanChunk(mc.world.getChunk(cp.x, cp.z));
             scannedChunks.add(cp);
             processed++;
+            structureChanged = true;
+        }
+
+        if (structureChanged) {
+            rebuildRenderSet();
         }
     }
 
@@ -288,14 +284,11 @@ public class LavaMarker extends Module {
         return Math.abs(cp.x - pX) > radius || Math.abs(cp.z - pZ) > radius;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Block Update
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
         if (mc.world == null) return;
         if (!mc.world.getRegistryKey().getValue().toString().equals("minecraft:the_nether")) return;
+
         BlockState ns = event.newState;
         if (ns.isOf(Blocks.LAVA) || ns.isAir()) {
             ChunkPos cp = new ChunkPos(event.pos);
@@ -308,9 +301,36 @@ public class LavaMarker extends Module {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Chunk Scan
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ── Scanning & Column Identification ─────────────────────────────────────
+
+    private static class LavaColumn {
+        final List<BlockPos> blocks = new ArrayList<>();
+        final int x, z;
+        int topY, bottomY;
+
+        LavaColumn(int x, int z, List<BlockPos> points) {
+            this.x = x;
+            this.z = z;
+            this.blocks.addAll(points);
+            topY = Integer.MIN_VALUE; 
+            bottomY = Integer.MAX_VALUE;
+
+            for (BlockPos p : points) {
+                topY = Math.max(topY, p.getY());
+                bottomY = Math.min(bottomY, p.getY());
+            }
+        }
+
+        int height() {
+            return topY - bottomY + 1;
+        }
+
+        boolean isDirectCardinalNeighbor(LavaColumn other) {
+            int dx = Math.abs(this.x - other.x);
+            int dz = Math.abs(this.z - other.z);
+            return (dx + dz) == 1;
+        }
+    }
 
     private void scanChunk(Chunk chunk) {
         if (chunk == null || mc.player == null || mc.world == null) return;
@@ -319,157 +339,176 @@ public class LavaMarker extends Module {
         int vRadius = verticalRadius.get();
         int playerY = (int) mc.player.getY();
         int minY = Math.max(mc.world.getBottomY(), playerY - vRadius);
-        int maxY = Math.min(mc.world.getBottomY() + mc.world.getHeight(), playerY + vRadius);
+        int maxY = Math.min(mc.world.getBottomY() + mc.world.getHeight() - 1, playerY + vRadius);
 
-        Set<BlockPos> fallTips = new HashSet<>();
-        ChunkSection[] sections = chunk.getSectionArray();
+        int startX = cp.getStartX();
+        int startZ = cp.getStartZ();
 
-        for (int i = 0; i < sections.length; i++) {
-            ChunkSection section = sections[i];
-            if (section == null || section.isEmpty()) continue;
+        List<LavaColumn> detected = new ArrayList<>();
+        BlockPos.Mutable probe = new BlockPos.Mutable();
 
-            int sectionY    = chunk.getBottomSectionCoord() + i;
-            int sectionMinY = sectionY << 4;
-            int sectionMaxY = sectionMinY + 15;
-            if (sectionMaxY < minY || sectionMinY > maxY) continue;
-            if (!section.hasAny(s -> s.getFluidState().isIn(FluidTags.LAVA))) continue;
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                int worldX = startX + x;
+                int worldZ = startZ + z;
 
-            for (int x = 0; x < 16; x++) {
-                for (int y = 0; y < 16; y++) {
-                    for (int z = 0; z < 16; z++) {
-                        int worldY = sectionMinY + y;
-                        if (worldY < minY || worldY > maxY) continue;
+                for (int y = maxY; y >= minY; y--) {
+                    probe.set(worldX, y, worldZ);
 
-                        FluidState fs = section.getBlockState(x, y, z).getFluidState();
-                        if (!fs.isIn(FluidTags.LAVA)) continue;
+                    FluidState fs = mc.world.getFluidState(probe);
+                    if (!fs.isIn(FluidTags.LAVA)) continue;
 
-                        boolean falling = fs.contains(Properties.FALLING) && fs.get(Properties.FALLING);
-                        if (!falling) continue;
+                    // Column Apex: non-still lava whose block above is not falling down onto it
+                    if (fs.isStill()) continue;
 
-                        BlockPos pos = new BlockPos(cp.getStartX() + x, worldY, cp.getStartZ() + z);
-                        if (!isFalling(pos.down())) fallTips.add(pos);
+                    BlockPos upPos = probe.up();
+                    FluidState upFluid = mc.world.getFluidState(upPos);
+                    if (isFallingState(upFluid)) continue;
+
+                    // Trace vertical column
+                    List<BlockPos> path = traceVerticalFall(worldX, worldZ, y, minY);
+                    if (path.isEmpty()) continue;
+
+                    LavaColumn col = new LavaColumn(worldX, worldZ, path);
+                    if (col.height() >= minFallHeight.get()) {
+                        detected.add(col);
                     }
+
+                    // Jump downward past the bottom of this column
+                    y = col.bottomY;
                 }
             }
         }
 
-        Set<BlockPos> allValidFallBlocks = new HashSet<>();
-        Set<BlockPos> visitedInScan      = new HashSet<>();
-        for (BlockPos tip : fallTips) {
-            if (visitedInScan.contains(tip)) continue;
+        if (!detected.isEmpty()) rawColumnsByChunk.put(cp, detected);
+        else rawColumnsByChunk.remove(cp);
+    }
 
-            Set<BlockPos> currentFall = new HashSet<>();
-            bfs(tip, currentFall, visitedInScan);
-            if (currentFall.isEmpty()) continue;
+    private List<BlockPos> traceVerticalFall(int x, int z, int startY, int minY) {
+        List<BlockPos> path = new ArrayList<>();
+        BlockPos.Mutable current = new BlockPos.Mutable(x, startY, z);
 
-            int fallMinY = Integer.MAX_VALUE;
-            int fallMaxY = Integer.MIN_VALUE;
-            for (BlockPos pos : currentFall) {
-                fallMinY = Math.min(fallMinY, pos.getY());
-                fallMaxY = Math.max(fallMaxY, pos.getY());
-            }
-            if (fallMaxY - fallMinY + 1 < minFallHeight.get()) continue;
+        while (current.getY() >= minY) {
+            FluidState fs = mc.world.getFluidState(current);
 
-            for (BlockPos pos : currentFall) {
-                FluidState fs = mc.world.getFluidState(pos);
-                if (fs.isIn(FluidTags.LAVA) && !fs.isStill()) allValidFallBlocks.add(pos);
+            if (fs.isIn(FluidTags.LAVA) && !fs.isStill()) {
+                path.add(current.toImmutable());
+
+                // Ocean surface boundary hit
+                if (current.getY() <= 32) {
+                    break;
+                }
+
+                current.move(0, -1, 0);
+            } else {
+                break;
             }
         }
 
-        if (!allValidFallBlocks.isEmpty()) fallsByChunk.put(cp, allValidFallBlocks);
-        else fallsByChunk.remove(cp);
+        if (path.isEmpty()) return Collections.emptyList();
+
+        if (onlyCompletedFalls.get()) {
+            BlockPos terminal = path.get(path.size() - 1);
+
+            // Reached lava ocean
+            if (terminal.getY() <= 32) {
+                return path;
+            }
+
+            BlockPos floorPos = terminal.down();
+            BlockState floorState = mc.world.getBlockState(floorPos);
+            FluidState floorFluid = floorState.getFluidState();
+
+            // Floating in air = incomplete
+            if (floorState.isAir()) return Collections.emptyList();
+
+            boolean hitSolidGround = !floorState.isAir() && !floorFluid.isIn(FluidTags.LAVA);
+            boolean hitLavaPool = floorFluid.isIn(FluidTags.LAVA);
+
+            if (!hitSolidGround && !hitLavaPool) {
+                return Collections.emptyList();
+            }
+        }
+
+        return path;
     }
 
-    private boolean isFalling(BlockPos pos) {
-        FluidState fs = mc.world.getFluidState(pos);
+    private void rebuildRenderSet() {
+        List<LavaColumn> allColumns = new ArrayList<>();
+        for (List<LavaColumn> list : rawColumnsByChunk.values()) {
+            allColumns.addAll(list);
+        }
+
+        List<LavaColumn> chosen;
+        if (mergeTouchingWalls.get()) {
+            allColumns.sort((a, b) -> Integer.compare(b.height(), a.height()));
+            chosen = new ArrayList<>();
+
+            for (LavaColumn candidate : allColumns) {
+                boolean isDirectWallNeighbor = false;
+                for (LavaColumn kept : chosen) {
+                    // Only suppress if sharing an orthogonal face (cardinal neighbor)
+                    if (candidate.isDirectCardinalNeighbor(kept)) {
+                        isDirectWallNeighbor = true;
+                        break;
+                    }
+                }
+                if (!isDirectWallNeighbor) {
+                    chosen.add(candidate);
+                }
+            }
+        } else {
+            // Keep all separate columns (all diagonals and distinct falls remain independent)
+            chosen = allColumns;
+        }
+
+        Set<BlockPos> newRenderBlocks = new HashSet<>();
+        for (LavaColumn col : chosen) {
+            newRenderBlocks.addAll(col.blocks);
+        }
+
+        filteredRenderBlocks.clear();
+        filteredRenderBlocks.addAll(newRenderBlocks);
+    }
+
+    private boolean isFallingState(FluidState fs) {
         return fs.isIn(FluidTags.LAVA) && fs.contains(Properties.FALLING) && fs.get(Properties.FALLING);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // BFS
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    private void bfs(BlockPos start, Set<BlockPos> result, Set<BlockPos> visited) {
-        if (visited.contains(start)) return;
-
-        Deque<BlockPos> queue = new ArrayDeque<>();
-        queue.add(start);
-        visited.add(start);
-
-        while (!queue.isEmpty()) {
-            BlockPos cur = queue.poll();
-            result.add(cur);
-
-            for (BlockPos nb : new BlockPos[]{
-                cur.north(), cur.south(), cur.east(), cur.west(), cur.down()
-            }) {
-                if (!visited.contains(nb)
-                        && mc.world.getChunkManager().isChunkLoaded(nb.getX() >> 4, nb.getZ() >> 4)) {
-                    FluidState ns = mc.world.getFluidState(nb);
-                    if (ns.isIn(FluidTags.LAVA) && !ns.isStill()) {
-                        visited.add(nb);
-                        queue.add(nb);
-                    }
-                }
-            }
-
-            BlockPos up = cur.up();
-            if (!visited.contains(up)
-                    && mc.world.getChunkManager().isChunkLoaded(up.getX() >> 4, up.getZ() >> 4)) {
-                if (isFalling(up)) {
-                    visited.add(up);
-                    queue.add(up);
-                }
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Render
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ── Render ───────────────────────────────────────────────────────────────
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.world == null) return;
+        if (mc.world == null || filteredRenderBlocks.isEmpty()) return;
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         boolean isPulse    = renderMode.get() == RenderMode.PULSE;
         int count = 0;
         int max   = maxRenderBlocks.get();
 
-        for (Set<BlockPos> set : fallsByChunk.values()) {
-            for (BlockPos pos : set) {
-                if (count >= max) return;
+        for (BlockPos pos : filteredRenderBlocks) {
+            if (count >= max) return;
 
-                FluidState fs = mc.world.getFluidState(pos);
-                if (!fs.isIn(FluidTags.LAVA)) continue;
-                if (fs.isStill()) continue;
+            FluidState fs = mc.world.getFluidState(pos);
+            if (!fs.isIn(FluidTags.LAVA) || fs.isStill()) continue;
 
-                boolean isBottomBlock = !mc.world.getFluidState(pos.down()).isIn(FluidTags.LAVA);
-                if (isBottomBlock && mc.world.getBlockState(pos.down()).isAir()) continue;
+            Box box = new Box(pos);
 
-                Box box = new Box(pos);
-
-                if (isSpectral) {
-                    int fillAlpha = spectralFillAlpha.get();
-                    ShapeMode mode = spectralOutline.get() ? ShapeMode.Both : ShapeMode.Sides;
-                    SettingColor outlineColor = spectralOutline.get() ? color.get() : withAlpha(color.get(), 0);
-                    event.renderer.box(box, withAlpha(color.get(), fillAlpha), outlineColor, mode, 0);
-                } else if (isPulse) {
-                    renderPulseBox(event, box, color.get());
-                } else {
-                    renderGlowLayers(event, box, color.get());
-                    event.renderer.box(box, withAlpha(color.get(), color.get().a), color.get(), ShapeMode.Both, 0);
-                }
-
-                count++;
+            if (isSpectral) {
+                int fillAlpha = spectralFillAlpha.get();
+                ShapeMode mode = spectralOutline.get() ? ShapeMode.Both : ShapeMode.Sides;
+                SettingColor outlineColor = spectralOutline.get() ? color.get() : withAlpha(color.get(), 0);
+                event.renderer.box(box, withAlpha(color.get(), fillAlpha), outlineColor, mode, 0);
+            } else if (isPulse) {
+                renderPulseBox(event, box, color.get());
+            } else {
+                renderGlowLayers(event, box, color.get());
+                event.renderer.box(box, withAlpha(color.get(), color.get().a), color.get(), ShapeMode.Both, 0);
             }
+
+            count++;
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Bloom & Pulse Rendering
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
         int    layers    = glowLayers.get();
@@ -516,10 +555,6 @@ public class LavaMarker extends Module {
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Color Helper
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private SettingColor withAlpha(SettingColor color, int alpha) {
         return new SettingColor(color.r, color.g, color.b, Math.min(255, Math.max(0, alpha)));
