@@ -75,7 +75,7 @@ public class DungeonAssistantHud extends HudElement {
         .visible(() -> (layout.get() == Layout.StackedIcons || layout.get() == Layout.Inline) && labelMode.get() != LabelMode.Text)
         .build()
     );
-    
+
     private final Setting<Double> iconGapSetting = sgGeneral.add(new DoubleSetting.Builder()
         .name("icon-gap")
         .description("Gap in pixels between icon and text.")
@@ -163,10 +163,10 @@ public class DungeonAssistantHud extends HudElement {
 
         int spawnerCount = counts.getOrDefault(DungeonAssistant.TargetType.SPAWNER, 0);
         if (showSpawners.get() && spawnerCount > 0) stats.add(new Stat("Spawners: ", String.valueOf(spawnerCount), spawnerColor.get(), new ItemStack(Items.SPAWNER)));
-        
+
         int chestCount = counts.getOrDefault(DungeonAssistant.TargetType.CHEST, 0);
         if (showChests.get() && chestCount > 0) stats.add(new Stat("Chests: ", String.valueOf(chestCount), chestColor.get(), new ItemStack(Items.CHEST)));
-        
+
         int minecartCount = counts.getOrDefault(DungeonAssistant.TargetType.CHEST_MINECART, 0);
         if (showMinecarts.get() && minecartCount > 0) stats.add(new Stat("Minecarts: ", String.valueOf(minecartCount), minecartColor.get(), new ItemStack(Items.CHEST_MINECART)));
 

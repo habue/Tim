@@ -102,7 +102,7 @@ public class CityAssistant extends Module {
     private final Map<BlockPos, TargetType> targets = new ConcurrentHashMap<>();
     private final Set<ChunkPos> scannedChunks = new HashSet<>();
     private final Set<BlockPos> checkedContainers = new HashSet<>();
-    
+
     private final Set<Integer> notifiedWardens = new HashSet<>();
     private final Map<Integer, Long> wardenSpawnTimes = new ConcurrentHashMap<>(); // For Despawn Timer
     private int darknessWarnTimer = 0;
@@ -265,7 +265,7 @@ public class CityAssistant extends Module {
         .name("container-whitelist")
         .description("Items to alert you about when opening Chests.")
         .defaultValue(List.of(
-            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND, 
+            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND,
             Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.DIAMOND_AXE, Items.DIAMOND_SHOVEL, Items.DIAMOND_HOE,
             Items.DIAMOND_HELMET, Items.DIAMOND_CHESTPLATE, Items.DIAMOND_LEGGINGS, Items.DIAMOND_BOOTS,
             Items.ENDER_CHEST, Items.ENCHANTED_GOLDEN_APPLE, Items.ELYTRA, Items.MACE,
@@ -384,7 +384,7 @@ public class CityAssistant extends Module {
         checkForPlayers();
         checkDarknessEffect();
         updateContainerLogic();
-        checkOpenedContainerLoot(); 
+        checkOpenedContainerLoot();
         updateMilkDrink();
         updateDynamicStates();
         updateScanningLogic();
@@ -510,7 +510,7 @@ public class CityAssistant extends Module {
 
         for (Warden warden : mc.level.getEntitiesOfClass(Warden.class, searchBox, e -> true)) {
             currentIds.add(warden.getId());
-            
+
             if (notifiedWardens.add(warden.getId())) {
                 totalWardenSpawns++;
                 wardenSpawnTimes.put(warden.getId(), System.currentTimeMillis());
@@ -590,7 +590,7 @@ public class CityAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void scanBlockEntitiesInChunk(LevelChunk chunk) {
-        int maxY = cityYLevel.get(); 
+        int maxY = cityYLevel.get();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
             BlockPos pos = be.getBlockPos();
@@ -598,15 +598,15 @@ public class CityAssistant extends Module {
 
             BlockState state = mc.level.getBlockState(pos);
             Block block = state.getBlock();
-            
+
             if (block == Blocks.SCULK_SHRIEKER) {
                 boolean isShrieking = state.getValue(BlockStateProperties.SHRIEKING);
                 boolean canSummon = state.getValue(BlockStateProperties.CAN_SUMMON);
-                
+
                 if (isShrieking) targets.put(pos, TargetType.ACTIVE_SHRIEKER);
                 else if (!canSummon) targets.put(pos, TargetType.DISABLED_SHRIEKER);
                 else targets.put(pos, TargetType.SHRIEKER);
-            } 
+            }
             else if (block == Blocks.SCULK_SENSOR) {
                 SculkSensorPhase phase = state.getValue(BlockStateProperties.SCULK_SENSOR_PHASE);
                 targets.put(pos, phase == SculkSensorPhase.ACTIVE ? TargetType.ACTIVE_SENSOR : TargetType.SENSOR);
@@ -657,13 +657,13 @@ public class CityAssistant extends Module {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
-            
+
             if (!hasAlertedForCurrentScreen) {
                 for (int i = 0; i < screen.getMenu().slots.size(); i++) {
                     Slot slot = screen.getMenu().slots.get(i);
                     // Ignore player's own inventory contents to prevent false triggers
                     if (slot.container instanceof Inventory) continue;
-                    
+
                     ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
                         info("§cRare loot found in chest: §e" + stack.getHoverName().getString() + "§c!");
@@ -692,7 +692,7 @@ public class CityAssistant extends Module {
         }
 
         boolean hasDarkness = mc.player.hasEffect(net.minecraft.world.effect.MobEffects.DARKNESS);
-        
+
         if (drinkTimer == 0 && hasDarkness && mc.screen == null) {
             int milkSlot = findMilkBucket();
             if (milkSlot != -1) {
@@ -880,7 +880,7 @@ public class CityAssistant extends Module {
         if (!autoDisableOnLowHealth.get()) return false;
         boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
             || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
-        if (hasTotem && mc.player.getHealth() <= 6) { 
+        if (hasTotem && mc.player.getHealth() <= 6) {
             error("Health is critical, disabling to prevent totem pop.");
             toggle();
             return true;
@@ -900,7 +900,7 @@ public class CityAssistant extends Module {
         List<CityAssistantHud.CityStat> stats = new ArrayList<>();
         int activeShriekers = 0, idleShriekers = 0, disabledShriekers = 0;
         int activeSensors = 0, idleSensors = 0, chestsNearby = 0;
-        
+
         for (TargetType type : targets.values()) {
             switch (type) {
                 case ACTIVE_SHRIEKER -> activeShriekers++;
@@ -911,9 +911,9 @@ public class CityAssistant extends Module {
                 case CONTAINER -> chestsNearby++;
             }
         }
-        
+
         int wardensNearby = notifiedWardens.size();
-        
+
         // Calculate Warden Despawn Timer
         int wardenTimer = 0;
         for (long spawnTime : wardenSpawnTimes.values()) {
@@ -921,7 +921,7 @@ public class CityAssistant extends Module {
             int remaining = (int) (60 - elapsed);
             if (remaining > wardenTimer) wardenTimer = remaining;
         }
-        
+
         // Order MUST match the HUD's expected indices (0 to 8)
         stats.add(new CityAssistantHud.CityStat("Warden Timer", wardenTimer, new ItemStack(Items.CLOCK), wardenTimer > 0 ? CityAssistantHud.StatSeverity.Critical : CityAssistantHud.StatSeverity.Normal));
         stats.add(new CityAssistantHud.CityStat("Warden Spawns", totalWardenSpawns, new ItemStack(Items.SCULK_CATALYST), totalWardenSpawns > 0 ? CityAssistantHud.StatSeverity.Warning : CityAssistantHud.StatSeverity.Normal));
@@ -932,7 +932,7 @@ public class CityAssistant extends Module {
         stats.add(new CityAssistantHud.CityStat("Dis Shrieks", disabledShriekers, new ItemStack(Items.SCULK_SHRIEKER), CityAssistantHud.StatSeverity.Normal));
         stats.add(new CityAssistantHud.CityStat("Act Sensor", activeSensors, new ItemStack(Items.SCULK_SENSOR), activeSensors > 0 ? CityAssistantHud.StatSeverity.Warning : CityAssistantHud.StatSeverity.Normal));
         stats.add(new CityAssistantHud.CityStat("Sensors", idleSensors, new ItemStack(Items.SCULK_SENSOR), CityAssistantHud.StatSeverity.Normal));
-        
+
         return stats;
     }
 }

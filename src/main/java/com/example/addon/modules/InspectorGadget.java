@@ -260,7 +260,7 @@ public class InspectorGadget extends Module {
     private int waitTimer = 0;
     private int pathTimeout = 0;
     private boolean issuedMoveCommand = false;
-    
+
     private boolean wasAddPressed = false;
     private boolean wasStartPressed = false;
     private boolean wasClearPressed = false;
@@ -522,14 +522,14 @@ public class InspectorGadget extends Module {
         if (currentInteractTile == null || !isStandable(currentInteractTile)) {
             currentInteractTile = null;
             List<BlockPos> validTiles = getValidInteractTiles(blockTarget);
-            
+
             if (validTiles.isEmpty()) {
                 // Fallback for elevated chests: Path to the block directly beneath the chest
                 BlockPos fallbackTile = blockTarget.below();
                 while (fallbackTile.getY() > mc.level.getMinY() && mc.level.getBlockState(fallbackTile).getCollisionShape(mc.level, fallbackTile).isEmpty()) {
                     fallbackTile = fallbackTile.below();
                 }
-                
+
                 // If the block beneath the chest is standable, use it
                 if (isStandable(fallbackTile.above())) {
                     currentInteractTile = fallbackTile.above();
@@ -607,7 +607,7 @@ public class InspectorGadget extends Module {
         // Use strictly horizontal difference for Yaw to prevent wild swinging when the chest is directly above/below
         mc.player.setYRot((float) Math.toDegrees(Math.atan2(-(blockCenter.x - eye.x), blockCenter.z - eye.z)));
         mc.player.setYHeadRot(mc.player.getYRot());
-        
+
         // Use 3D difference for Pitch, safely clamped
         double dist3d = blockCenter.distanceTo(eye);
         if (dist3d > 0) {
@@ -691,7 +691,7 @@ public class InspectorGadget extends Module {
         mc.options.keyJump.setDown(false);
         mc.options.keySprint.setDown(false);
         mc.options.keyShift.setDown(false);
-        
+
         try {
             IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
             IPathingBehavior pathing = baritone.getPathingBehavior();
@@ -730,13 +730,13 @@ public class InspectorGadget extends Module {
         if (!head.getCollisionShape(mc.level, pos.above()).isEmpty()) return false;
         // Floor must have a collision shape (any solid-enough surface counts).
         if (floor.getCollisionShape(mc.level, pos.below()).isEmpty()) return false;
-        
+
         // Do not choose a spot on top of storage blocks
         Block floorBlock = floor.getBlock();
         if (targetStorage.get().contains(floorBlock) || floorBlock instanceof ShulkerBoxBlock || floorBlock == Blocks.ENDER_CHEST) {
             return false;
         }
-        
+
         return true;
     }
 
@@ -790,7 +790,7 @@ public class InspectorGadget extends Module {
                 pos.getX(), pos.getY() + 1.0, pos.getZ(),
                 pos.getX() + 1.0, pos.getY() + 1.02, pos.getZ() + 1.0
             );
-            
+
             double height = Math.min((i + 1) * 0.25, 3.0);
             AABB pillarBox = new AABB(
                 pos.getX() + 0.4, pos.getY() + 1.0, pos.getZ() + 0.4,
@@ -817,7 +817,7 @@ public class InspectorGadget extends Module {
             for (BlockPos pos : localTargets) {
                 if (visitedTargets.contains(pos)) continue;
                 AABB box = new AABB(pos);
-                
+
                 if (mode == HighlightMode.GLOW) {
                     renderGlowLayers(event, box, cColor);
                     event.renderer.box(box, withAlpha(cColor, 0), cColor, ShapeMode.Lines, 0);

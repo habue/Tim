@@ -256,7 +256,7 @@ public class CityAssistantHud extends HudElement {
         boolean showText = displayMode.get() == DisplayMode.Vertical && labelMode.get() != LabelMode.Icon;
 
         List<StatRow> rows = new ArrayList<>();
-        
+
         // Must match the order of stats added in CityAssistant.getStats()
         if (showWardenTimer.get())           addStat(rows, stats.get(0), showText);
         if (showWardenSpawns.get())          addStat(rows, stats.get(1), showText);

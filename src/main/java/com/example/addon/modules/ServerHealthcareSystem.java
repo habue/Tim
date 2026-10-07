@@ -448,7 +448,7 @@ public class ServerHealthcareSystem extends Module {
         bedOriginalHotbarSlot = -1;
         highestHungerSeen     = -1;
         moveWaitTicks         = 0;
-        
+
         // Smart Chestplate resets
         lastSwapTime = 0;
         jumpTime = -1;

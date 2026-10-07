@@ -111,12 +111,12 @@ public class ChambersAssistant extends Module {
     private final Set<BlockPos> checkedContainers = new HashSet<>();
     private final Set<BlockPos> notifiedPots = new HashSet<>();
     private final Set<BlockPos> notifiedActiveOminousSpawners = new HashSet<>();
-    
+
     private final List<Breeze> breezeTargets = new ArrayList<>();
     private final List<WindCharge> windChargeTargets = new ArrayList<>();
     private final List<ItemFrame> itemFrameTargets = new ArrayList<>();
     private final List<ItemEntity> trialItemTargets = new ArrayList<>();
-    
+
     private final Set<Integer> notifiedBreezes = new HashSet<>();
     private final Set<Integer> notifiedDroppedRewards = new HashSet<>();
     private int omenWarnTimer = 0;
@@ -293,7 +293,7 @@ public class ChambersAssistant extends Module {
         .name("container-whitelist")
         .description("Items to alert you about when opening Chests/Barrels/Dispensers.")
         .defaultValue(List.of(
-            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND, 
+            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND,
             Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.DIAMOND_AXE, Items.DIAMOND_SHOVEL, Items.DIAMOND_HOE,
             Items.DIAMOND_HELMET, Items.DIAMOND_CHESTPLATE, Items.DIAMOND_LEGGINGS, Items.DIAMOND_BOOTS,
             Items.ENDER_CHEST, Items.ENCHANTED_GOLDEN_APPLE, Items.ELYTRA, Items.MACE, Items.OMINOUS_BOTTLE,
@@ -502,7 +502,7 @@ public class ChambersAssistant extends Module {
         checkForPlayers();
         checkOmenEffects();
         updateContainerLogic();
-        checkOpenedContainerLoot(); 
+        checkOpenedContainerLoot();
         updateOminousDrink();
         updateVaultAutomation();
         updateDynamicStates();
@@ -578,7 +578,7 @@ public class ChambersAssistant extends Module {
 
                 if (currentType != newType) {
                     targets.put(pos, newType);
-                    
+
                     if (newType == TargetType.ACTIVE_OMINOUS_SPAWNER && enableAlerts.get() && notifiedActiveOminousSpawners.add(pos)) {
                         info("§cOminous Spawner Activated!");
                         playAlert();
@@ -686,7 +686,7 @@ public class ChambersAssistant extends Module {
 
             lastKnownVaultItems.put(key, current);
             boolean isTrigger = vaultTriggerItems.get().contains(current);
-            
+
             StringBuilder msg = new StringBuilder("§7[Vault Display] " + display.getHoverName().getString());
             if (isTrigger) {
                 msg.append(" §a[MATCH - Triggering Opening]");
@@ -712,7 +712,7 @@ public class ChambersAssistant extends Module {
             mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
             mc.player.swing(InteractionHand.MAIN_HAND);
         });
-        
+
         successfullyOpenedVaults.add(pos);
         checkedContainers.add(pos);
     }
@@ -740,7 +740,7 @@ public class ChambersAssistant extends Module {
         scanWindCharges();
         scanOminousItemFrames();
         scanTrialItems();
-        scanDroppedRewards(); 
+        scanDroppedRewards();
         pruneBlockTargets();
         scanNewChunks(centerChunkX, centerChunkZ);
     }
@@ -897,16 +897,16 @@ public class ChambersAssistant extends Module {
     }
 
     private void scanBlockEntitiesInChunk(LevelChunk chunk) {
-        int maxY = chamberYLevel.get(); 
+        int maxY = chamberYLevel.get();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
             BlockPos pos = be.getBlockPos();
             if (pos.getY() > maxY) continue;
 
             BlockState state = mc.level.getBlockState(pos);
-            
+
             if (be instanceof TrialSpawnerBlockEntity) {
-                boolean isOminous = state.getValue(BlockStateProperties.OMINOUS); 
+                boolean isOminous = state.getValue(BlockStateProperties.OMINOUS);
                 TrialSpawnerState spawnerState = state.getValue(BlockStateProperties.TRIAL_SPAWNER_STATE);
 
                 if (spawnerState == TrialSpawnerState.EJECTING_REWARD) {
@@ -916,11 +916,11 @@ public class ChambersAssistant extends Module {
                 } else {
                     targets.put(pos, isOminous ? TargetType.OMINOUS_SPAWNER : TargetType.TRIAL_SPAWNER);
                 }
-            } 
+            }
             else if (be instanceof VaultBlockEntity) {
                 boolean isOminous = state.getValue(BlockStateProperties.OMINOUS);
                 VaultState vState = state.getValue(BlockStateProperties.VAULT_STATE);
-                
+
                 if (vState == VaultState.EJECTING) {
                     targets.put(pos, TargetType.EJECTING_VAULT);
                 } else {
@@ -932,10 +932,10 @@ public class ChambersAssistant extends Module {
             }
             else if (be instanceof DecoratedPotBlockEntity pot) {
                 if (!potWhitelist.get().isEmpty()) {
-                    ItemStack potItem = pot.getTheItem(); 
+                    ItemStack potItem = pot.getTheItem();
                     if (!potItem.isEmpty() && potWhitelist.get().contains(potItem.getItem())) {
                         targets.put(pos, TargetType.LOOT_POT);
-                        
+
                         if (notifiedPots.add(pos)) {
                             if (alertOnLootPot.get()) {
                                 info("§bLoot Pot detected containing: §e" + potItem.getHoverName().getString() + "§b!");
@@ -984,12 +984,12 @@ public class ChambersAssistant extends Module {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
-            
+
             if (!hasAlertedForCurrentScreen) {
                 for (int i = 0; i < screen.getMenu().slots.size(); i++) {
                     Slot slot = screen.getMenu().slots.get(i);
                     if (slot.container instanceof Inventory) continue;
-                    
+
                     ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
                         info("§cRare loot found in container: §e" + stack.getHoverName().getString() + "§c!");
@@ -1229,7 +1229,7 @@ public class ChambersAssistant extends Module {
         if (!autoDisableOnLowHealth.get()) return false;
         boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
             || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
-        if (hasTotem && mc.player.getHealth() <= 6) { 
+        if (hasTotem && mc.player.getHealth() <= 6) {
             error("Health is critical, disabling to prevent totem pop.");
             toggle();
             return true;
@@ -1250,7 +1250,7 @@ public class ChambersAssistant extends Module {
     public List<ChambersAssistantHud.ChamberStat> getStats() {
         List<ChambersAssistantHud.ChamberStat> stats = new ArrayList<>();
         int normalSpawners = 0, ominousSpawners = 0, normalVaults = 0, ominousVaults = 0, lootPots = 0, containers = 0;
-        
+
         for (TargetType type : targets.values()) {
             switch (type) {
                 case TRIAL_SPAWNER, ACTIVE_TRIAL_SPAWNER, EJECTING_TRIAL_SPAWNER -> normalSpawners++;
@@ -1261,7 +1261,7 @@ public class ChambersAssistant extends Module {
                 case CONTAINER -> containers++;
             }
         }
-        
+
         stats.add(new ChambersAssistantHud.ChamberStat("Spawners", normalSpawners, new ItemStack(Items.TRIAL_SPAWNER), ChambersAssistantHud.StatSeverity.Normal));
         stats.add(new ChambersAssistantHud.ChamberStat("Ominous", ominousSpawners, new ItemStack(Items.TRIAL_SPAWNER), ominousSpawners > 0 ? ChambersAssistantHud.StatSeverity.Warning : ChambersAssistantHud.StatSeverity.Normal));
         stats.add(new ChambersAssistantHud.ChamberStat("Vaults", normalVaults, new ItemStack(Items.VAULT), ChambersAssistantHud.StatSeverity.Normal));
@@ -1270,7 +1270,7 @@ public class ChambersAssistant extends Module {
         stats.add(new ChambersAssistantHud.ChamberStat("Chests", containers, new ItemStack(Items.CHEST), ChambersAssistantHud.StatSeverity.Normal));
         stats.add(new ChambersAssistantHud.ChamberStat("Breezes", breezeTargets.size(), new ItemStack(Items.WIND_CHARGE), breezeTargets.size() > 0 ? ChambersAssistantHud.StatSeverity.Warning : ChambersAssistantHud.StatSeverity.Normal));
         stats.add(new ChambersAssistantHud.ChamberStat("Keys", trialItemTargets.size(), new ItemStack(Items.TRIAL_KEY), ChambersAssistantHud.StatSeverity.Normal));
-        
+
         return stats;
     }
 }

@@ -323,15 +323,15 @@ public class EightToOne extends Module {
         handleDimensionChange();
         handleAutoReplenish();
 
-        if (!dirtyChunks.isEmpty()) { 
-            scannedChunks.removeAll(dirtyChunks); 
-            dirtyChunks.clear(); 
+        if (!dirtyChunks.isEmpty()) {
+            scannedChunks.removeAll(dirtyChunks);
+            dirtyChunks.clear();
         }
 
         BlockPos playerPos = mc.player.blockPosition();
         scanNewChunks(playerPos.getX() >> 4, playerPos.getZ() >> 4);
 
-        // Periodically retry resolving portals stuck in PENDING state 
+        // Periodically retry resolving portals stuck in PENDING state
         // (fixes fast flying where chunks load before corners are available)
         if (++pendingCheckTimer >= 20) {
             pendingCheckTimer = 0;
@@ -380,7 +380,7 @@ public class EightToOne extends Module {
     private void precomputeFrameBoxes() {
         for (PortalStructure structure : portalStructureMap.values()) {
             if (structure.type != PortalType.NETHER) continue;
-            
+
             AABB frameBox = null;
             try {
                 for (BlockPos p : structure.portalBlocks) {
@@ -397,7 +397,7 @@ public class EightToOne extends Module {
             } catch (Exception e) {
                 frameBox = null;
             }
-            
+
             structure.cachedFrameBox = (frameBox != null) ? frameBox.inflate(0.02) : null;
         }
     }
@@ -451,7 +451,7 @@ public class EightToOne extends Module {
 
             boolean hasNether = false;
             boolean hasAnchor = false;
-            
+
             if (differentiatePortalSizes.get()) {
                 try {
                     hasNether = section.maybeHas(state -> state.is(Blocks.NETHER_PORTAL));
@@ -466,7 +466,7 @@ public class EightToOne extends Module {
                     hasAnchor = false;
                 }
             }
-            
+
             if (!hasNether && !hasAnchor) continue;
 
             int sectionMinY = (chunk.getMinSectionY() + i) * 16;
@@ -509,12 +509,12 @@ public class EightToOne extends Module {
         Set<BlockPos> active = new HashSet<>();
 
         List<BlockPos> portalKeys = List.copyOf(portals.keySet());
-        
+
         for (BlockPos startPos : portalKeys) {
             if (visited.contains(startPos)) continue;
             PortalType type = portals.get(startPos);
             if (type == null) continue;
-            
+
             if (type == PortalType.RESPAWN_ANCHOR) {
                 visited.add(startPos);
                 if (onlyShowChargedAnchors.get() && !anchorChargeMap.getOrDefault(startPos, false)) continue;
@@ -522,13 +522,13 @@ public class EightToOne extends Module {
                 portalStructureMap.put(startPos, new PortalStructure(new AABB(startPos).inflate(0.02), Set.of(startPos), false, SizeState.EXIT, type));
                 continue;
             }
-            
+
             Set<BlockPos> component = new HashSet<>();
             Queue<BlockPos> queue = new LinkedList<>();
             AABB structureBox = new AABB(startPos);
             boolean isCreated = false;
             queue.add(startPos); visited.add(startPos);
-            
+
             while (!queue.isEmpty()) {
                 BlockPos current = queue.poll();
                 component.add(current);
@@ -542,10 +542,10 @@ public class EightToOne extends Module {
                     }
                 }
             }
-            
+
             BlockPos anchor = componentAnchor(component);
             active.add(anchor);
-            
+
             SizeState sizeState = SizeState.PENDING;
             String crossKey = lastDimension + ":" + anchor.getX() + "," + anchor.getY() + "," + anchor.getZ();
             Boolean crossCached = crossDimensionSizeCache.get(crossKey);
@@ -560,7 +560,7 @@ public class EightToOne extends Module {
                     sizeState = SizeState.PENDING; // Chunks not loaded yet
                 }
             }
-            
+
             boolean wasInMap = portalStructureMap.containsKey(anchor);
             SizeState previousSizeState = wasInMap ? portalStructureMap.get(anchor).sizeState : null;
 
@@ -568,7 +568,7 @@ public class EightToOne extends Module {
                 totalCreated++;
                 sendMessage("§aCreated Portal #" + totalCreated + (sizeState == SizeState.EXIT ? " §8[Exit]" : " §8[Custom]"));
             }
-            
+
             PortalStructure structure = new PortalStructure(structureBox.inflate(0.02), component, isCreated, sizeState, type);
             portalStructureMap.put(anchor, structure);
         }
@@ -581,14 +581,14 @@ public class EightToOne extends Module {
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
         int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
         int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
-        
+
         for (BlockPos pos : component) {
             minX = Math.min(minX, pos.getX()); maxX = Math.max(maxX, pos.getX());
             minY = Math.min(minY, pos.getY()); maxY = Math.max(maxY, pos.getY());
             minZ = Math.min(minZ, pos.getZ()); maxZ = Math.max(maxZ, pos.getZ());
         }
-        
-        BlockPos[] corners = (minX == maxX) 
+
+        BlockPos[] corners = (minX == maxX)
             ? new BlockPos[]{
                 new BlockPos(minX, minY-1, minZ-1), new BlockPos(minX, minY-1, maxZ+1),
                 new BlockPos(minX, maxY+1, minZ-1), new BlockPos(minX, maxY+1, maxZ+1)
@@ -597,7 +597,7 @@ public class EightToOne extends Module {
                 new BlockPos(minX-1, minY-1, minZ), new BlockPos(maxX+1, minY-1, minZ),
                 new BlockPos(minX-1, maxY+1, minZ), new BlockPos(maxX+1, maxY+1, minZ)
               };
-        
+
         for (BlockPos c : corners) {
             try {
                 if (!isChunkLoaded(c)) return null; // Return null if we can't verify yet
@@ -627,14 +627,14 @@ public class EightToOne extends Module {
         if (mc.player == null) return;
         double distSq = Math.pow(range.get() * 16 + 64, 2);
         boolean removed = false;
-        
+
         if (portals.entrySet().removeIf(e -> e.getKey().distToCenterSqr(mc.player.position()) > distSq)) {
             portalsDirty = true;
             removed = true;
         }
 
         if (removed) {
-            portalStructureMap.entrySet().removeIf(e -> 
+            portalStructureMap.entrySet().removeIf(e ->
                 e.getValue().boundingBox.getCenter().distanceToSqr(mc.player.position()) > distSq);
             framesDirty = true;
         }
@@ -647,17 +647,17 @@ public class EightToOne extends Module {
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
         if (mc.level == null || mc.player == null) return;
-        
+
         PortalType type = classifyBlock(event.newState.getBlock());
-        if (type != null) { 
-            portals.put(event.pos, type); 
-            portalsDirty = true; 
-        } else if (portals.remove(event.pos) != null) { 
-            portalsDirty = true; 
+        if (type != null) {
+            portals.put(event.pos, type);
+            portalsDirty = true;
+        } else if (portals.remove(event.pos) != null) {
+            portalsDirty = true;
         }
-        
+
         if (event.newState.is(Blocks.OBSIDIAN) || event.oldState.is(Blocks.OBSIDIAN)) {
-            crossDimensionSizeCache.clear(); 
+            crossDimensionSizeCache.clear();
             portalsDirty = true;
             framesDirty = true;
         }
@@ -666,7 +666,7 @@ public class EightToOne extends Module {
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (mc.player == null || mc.level == null) return;
-        
+
         double beamDistSq = Math.pow(beamRange.get() * 16.0, 2);
 
         PortalStructure nearest = null;
@@ -679,14 +679,14 @@ public class EightToOne extends Module {
         }
 
         List<PortalStructure> structuresToRender = List.copyOf(portalStructureMap.values());
-        
+
         for (PortalStructure structure : structuresToRender) {
             BlockPos center = BlockPos.containing(structure.boundingBox.getCenter());
             if (!isChunkLoaded(center)) continue;
 
             SettingColor color = getStructureColor(structure);
             if (color == null) continue;
-            
+
             if (highlightStyle.get() == HighlightStyle.SPECTRAL) {
                 renderSpectral(event, structure, color);
             } else if (highlightStyle.get() == HighlightStyle.PULSE) {
@@ -702,8 +702,8 @@ public class EightToOne extends Module {
                 renderGlowLayers(event, structure.boundingBox, color);
                 event.renderer.box(structure.boundingBox, withAlpha(color, 0), color, shapeMode.get(), 0);
             }
-            
-            if (showBeam.get() && (nearest == null || structure == nearest) 
+
+            if (showBeam.get() && (nearest == null || structure == nearest)
                 && mc.player.position().distanceToSqr(structure.boundingBox.getCenter()) <= beamDistSq) {
                 SettingColor beamColor = (highlightStyle.get() == HighlightStyle.PULSE) ? pulseColor(color) : color;
                 renderBeams(event, List.of(new BeamData(structure.boundingBox, beamColor)));
@@ -719,8 +719,8 @@ public class EightToOne extends Module {
     }
 
     private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
-        int layers = glowLayers.get(); 
-        double spread = glowSpread.get(); 
+        int layers = glowLayers.get();
+        double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
         for (int i = layers; i >= 1; i--) {
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i-1) / layers)));
@@ -822,7 +822,7 @@ public class EightToOne extends Module {
     private void sendMessage(String message) {
         long now = System.currentTimeMillis();
         if (now - messageCooldowns.getOrDefault(message, 0L) > MESSAGE_COOLDOWN_MS) {
-            info(message); 
+            info(message);
             messageCooldowns.put(message, now);
         }
     }
@@ -837,8 +837,8 @@ public class EightToOne extends Module {
             : targetSlot.get() - 1;
 
         ItemStack targetStack = mc.player.getInventory().getItem(selectedSlot);
-        Item targetItem = replenishItem.get() == ReplenishItem.Obsidian 
-            ? Items.OBSIDIAN 
+        Item targetItem = replenishItem.get() == ReplenishItem.Obsidian
+            ? Items.OBSIDIAN
             : Items.ENDER_CHEST;
 
         if (!targetStack.isEmpty() && targetStack.getItem() != targetItem) return;
@@ -850,13 +850,13 @@ public class EightToOne extends Module {
     }
 
     private void handleReplenish(boolean silent) {
-        int selectedSlot = useSelectedSlot.get() 
-            ? mc.player.getInventory().getSelectedSlot() 
+        int selectedSlot = useSelectedSlot.get()
+            ? mc.player.getInventory().getSelectedSlot()
             : targetSlot.get() - 1;
 
         ItemStack targetStack = mc.player.getInventory().getItem(selectedSlot);
-        Item targetItem = replenishItem.get() == ReplenishItem.Obsidian 
-            ? Items.OBSIDIAN 
+        Item targetItem = replenishItem.get() == ReplenishItem.Obsidian
+            ? Items.OBSIDIAN
             : Items.ENDER_CHEST;
 
         if (!targetStack.isEmpty() && targetStack.getItem() != targetItem) {
@@ -905,26 +905,26 @@ public class EightToOne extends Module {
 
     private enum PortalType { NETHER, RESPAWN_ANCHOR }
     private enum SizeState { PENDING, EXIT, CUSTOM }
-    
+
     private static class PortalStructure {
-        final AABB boundingBox; 
-        final Set<BlockPos> portalBlocks; 
-        final boolean isCreated; 
-        final SizeState sizeState; 
+        final AABB boundingBox;
+        final Set<BlockPos> portalBlocks;
+        final boolean isCreated;
+        final SizeState sizeState;
         final PortalType type;
         AABB cachedFrameBox;
-        
+
         PortalStructure(AABB bb, Set<BlockPos> pb, boolean ic, SizeState ss, PortalType t) {
-            this.boundingBox = bb; 
-            this.portalBlocks = pb; 
-            this.isCreated = ic; 
-            this.sizeState = ss; 
+            this.boundingBox = bb;
+            this.portalBlocks = pb;
+            this.isCreated = ic;
+            this.sizeState = ss;
             this.type = t;
             this.cachedFrameBox = null;
         }
-        
+
         boolean isFullSize() { return sizeState == SizeState.EXIT; }
     }
-    
+
     private record BeamData(AABB box, SettingColor color) {}
 }

@@ -196,7 +196,7 @@ public class Penpal extends Module {
             wasPressed[id] = false;
             return;
         }
-        
+
         boolean pressed = isPressed(keySetting.get(), modSetting.get());
         if (pressed && !wasPressed[id]) {
             // Check global cooldown
@@ -208,14 +208,14 @@ public class Penpal extends Module {
                 } else {
                     finalMessage = getRandomBotCommand();
                 }
-                
+
                 // Append anti-spam suffix
                 finalMessage += " " + generateAntiSpamSuffix();
-                
+
                 // Calculate delay
                 long delay = humanDelay.get() ? 50 + random.nextInt(101) : 0; // 50-150ms
                 long executeAt = System.currentTimeMillis() + delay;
-                
+
                 // Queue message
                 messageQueue.add(new PendingMessage(targetSetting.get(), finalMessage, executeAt));
                 lastSentTime = System.currentTimeMillis();
@@ -227,14 +227,14 @@ public class Penpal extends Module {
     private String getRandomBotCommand() {
         String[] pool = randomPool.get().split(",");
         List<String> valid = new ArrayList<>();
-        
+
         for (String s : pool) {
             String trimmed = s.trim();
             if (!trimmed.isEmpty() && !trimmed.equals(lastBotCmd)) {
                 valid.add(trimmed);
             }
         }
-        
+
         if (valid.isEmpty()) {
             // Fallback if pool is empty or only contains the last command
             for (String s : pool) {
@@ -246,7 +246,7 @@ public class Penpal extends Module {
             }
             return "tp"; // Ultimate fallback
         }
-        
+
         String cmd = valid.get(random.nextInt(valid.size()));
         lastBotCmd = cmd;
         return cmd;
@@ -263,7 +263,7 @@ public class Penpal extends Module {
     private void executeSend(String target, String msg) {
         if (mc.player == null || mc.getConnection() == null) return;
         if (target.isEmpty() || msg.isEmpty()) return;
-        
+
         target = target.trim();
         mc.getConnection().sendCommand("msg " + target + " " + msg);
         if (chatFeedback.get()) {
@@ -274,7 +274,7 @@ public class Penpal extends Module {
     private boolean isPressed(Keybind key, Modifier modifier) {
         if (!key.isPressed()) return false;
         if (mc.screen != null) return false; // Don't trigger when in menus/chat
-        
+
         long handle = mc.getWindow().handle();
         boolean shiftDown = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
         boolean ctrlDown = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;

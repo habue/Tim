@@ -354,7 +354,7 @@ public class StatisticsInformation extends HudElement {
         Alignment align = alignment.get();
         for (int i = 0; i < lines.size(); i++) {
             Line line = lines.get(i);
-            
+
             double lineW = 0;
             for (Segment seg : line.segments) {
                 lineW += renderer.textWidth(seg.text, false, s);
@@ -404,12 +404,12 @@ public class StatisticsInformation extends HudElement {
             segs.add(new Segment("FPS: ", labelColor.get()));
             segs.add(new Segment(String.valueOf(mc.getFps()), valueColor.get()));
         }
-        
+
         if (showTps.get()) {
             if (!segs.isEmpty()) segs.add(new Segment(" | ", separatorColor.get()));
             float tps = TickRate.INSTANCE.getTickRate();
-            Color tpsColor = tps < 10f ? new SettingColor(255, 60, 60, 255) : 
-                             tps < 15f ? new SettingColor(255, 200, 0, 255) : 
+            Color tpsColor = tps < 10f ? new SettingColor(255, 60, 60, 255) :
+                             tps < 15f ? new SettingColor(255, 200, 0, 255) :
                              valueColor.get();
             segs.add(new Segment("TPS: ", labelColor.get()));
             segs.add(new Segment(String.format("%.1f", tps), tpsColor));
@@ -457,7 +457,7 @@ public class StatisticsInformation extends HudElement {
         long usedMB = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
         long maxMB  = rt.maxMemory() / (1024 * 1024);
         double pct  = (double) usedMB / maxMB;
-        
+
         Color memColor = valueColor.get();
         if (memoryColorCode.get()) {
             if      (pct >= 0.90) memColor = new SettingColor(255, 60,  60,  255);
@@ -505,8 +505,8 @@ public class StatisticsInformation extends HudElement {
         String value = switch (timeFormat.get()) {
             case Seconds -> String.format("%ds", totalSecs);
             case HM      -> hours > 0 ? String.format("%dh %02dm", hours, minutes) : String.format("%dm", minutes);
-            case HMS     -> hours > 0 ? String.format("%dh %02dm %02ds", hours, minutes, seconds) : 
-                            minutes > 0 ? String.format("%dm %02ds", minutes, seconds) : 
+            case HMS     -> hours > 0 ? String.format("%dh %02dm %02ds", hours, minutes, seconds) :
+                            minutes > 0 ? String.format("%dm %02ds", minutes, seconds) :
                             String.format("%ds", seconds);
         };
         lines.add(new Line(List.of(

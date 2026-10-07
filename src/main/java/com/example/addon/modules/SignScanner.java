@@ -179,8 +179,8 @@ public class SignScanner extends Module {
         .defaultValue(Keybind.none())
         .visible(autoSign::get)
         .action(() -> {
-            MessageProfile newProfile = activeProfile.get() == MessageProfile.MESSAGE_1 
-                ? MessageProfile.MESSAGE_2 
+            MessageProfile newProfile = activeProfile.get() == MessageProfile.MESSAGE_1
+                ? MessageProfile.MESSAGE_2
                 : MessageProfile.MESSAGE_1;
             activeProfile.set(newProfile);
             info("Switched Auto Sign profile to: " + newProfile.toString());
@@ -378,7 +378,7 @@ public class SignScanner extends Module {
 
     // AutoSign state
     private int         editTimer   = 0;
-    private BlockEntity pendingSign = null;   
+    private BlockEntity pendingSign = null;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Constructor
@@ -498,7 +498,7 @@ public class SignScanner extends Module {
             case MESSAGE_1 -> message1Lines.get();
             case MESSAGE_2 -> message2Lines.get();
         };
-        
+
         String[] rows = new String[4];
         for (int i = 0; i < 4; i++) {
             rows[i] = (i < configured.size()) ? configured.get(i) : "";
@@ -843,10 +843,10 @@ public class SignScanner extends Module {
         }
 
         SettingColor lc = withAlpha(sc, lineAlpha);
-        Renderer2D.COLOR.quad(ox,                oy,                 ow,        thickness, lc); 
-        Renderer2D.COLOR.quad(ox,                oy + oh - thickness, ow,        thickness, lc); 
-        Renderer2D.COLOR.quad(ox,                oy + thickness,      thickness, oh - thickness * 2, lc); 
-        Renderer2D.COLOR.quad(ox + ow - thickness, oy + thickness,    thickness, oh - thickness * 2, lc); 
+        Renderer2D.COLOR.quad(ox,                oy,                 ow,        thickness, lc);
+        Renderer2D.COLOR.quad(ox,                oy + oh - thickness, ow,        thickness, lc);
+        Renderer2D.COLOR.quad(ox,                oy + thickness,      thickness, oh - thickness * 2, lc);
+        Renderer2D.COLOR.quad(ox + ow - thickness, oy + thickness,    thickness, oh - thickness * 2, lc);
 
         Renderer2D.COLOR.render();
     }

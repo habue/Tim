@@ -161,7 +161,7 @@ public class Mendbot extends Module {
         .visible(() -> mendSource.get() == MendSource.Mining)
         .build()
     );
-    
+
     private final Setting<Integer> actionDelay = sgGeneral.add(new IntSetting.Builder()
         .name("action-delay")
         .description("Ticks to wait after resuming and swapping (Fixes kicking).")
@@ -231,7 +231,7 @@ public class Mendbot extends Module {
     private int mendTimer = 0;
     private ItemStack savedHelmet = ItemStack.EMPTY;
     private boolean isPaused = false;
-    
+
     private MiningState miningState = MiningState.SEARCHING;
     private int currentRepairSlot = -1;
     private EquipmentSlot targetEquipSlot = null;
@@ -248,7 +248,7 @@ public class Mendbot extends Module {
         mendTimer = 0;
         startCommandSent = false;
         isPaused = false;
-        
+
         if (mendSource.get() == MendSource.Mining) {
             miningState = MiningState.SEARCHING;
             currentRepairSlot = -1;
@@ -283,9 +283,9 @@ public class Mendbot extends Module {
         }
         return -1;
     }
-    
+
     private boolean isHotbar(int slot) { return slot >= 0 && slot < 9; }
-    
+
     private int countHotbarBottles() {
         if (mc.player == null) return 0;
         int count = 0;
@@ -426,7 +426,7 @@ public class Mendbot extends Module {
                     sb.append(oreName);
                     return sb.toString();
                 } else {
-                    return "#mine"; 
+                    return "#mine";
                 }
             }
         }
@@ -470,34 +470,34 @@ public class Mendbot extends Module {
                     if (autoDisable.get()) toggle();
                     return;
                 }
-                
+
                 ItemStack stack = mc.player.getInventory().getItem(foundSlot);
                 if (stack.isEmpty()) {
                     return;
                 }
-                
+
                 targetEquipSlot = getTargetEquipmentSlot(stack);
                 targetIsOffhand = (targetEquipSlot == null && isTool(stack));
-                
+
                 if (targetEquipSlot == EquipmentSlot.HEAD && goldenHelmet.get()) {
-                    return; 
+                    return;
                 }
-                
+
                 equipItem(foundSlot, targetEquipSlot, targetIsOffhand);
                 currentRepairSlot = foundSlot;
                 miningState = MiningState.EQUIPPING;
-                swapTimer = 4; 
+                swapTimer = 4;
             }
             case EQUIPPING -> {
                 if (swapTimer > 0) {
                     swapTimer--;
                     return;
                 }
-                
-                ItemStack equipped = targetIsOffhand ? 
-                    mc.player.getOffhandItem() : 
+
+                ItemStack equipped = targetIsOffhand ?
+                    mc.player.getOffhandItem() :
                     (targetEquipSlot != null ? mc.player.getItemBySlot(targetEquipSlot) : ItemStack.EMPTY);
-                    
+
                 if (!equipped.isEmpty() && equipped.isDamaged()) {
                     miningState = MiningState.REPAIRING;
                     info("Repairing: " + equipped.getHoverName().getString());
@@ -508,10 +508,10 @@ public class Mendbot extends Module {
                 }
             }
             case REPAIRING -> {
-                ItemStack equipped = targetIsOffhand ? 
-                    mc.player.getOffhandItem() : 
+                ItemStack equipped = targetIsOffhand ?
+                    mc.player.getOffhandItem() :
                     (targetEquipSlot != null ? mc.player.getItemBySlot(targetEquipSlot) : ItemStack.EMPTY);
-                
+
                 if (equipped.isEmpty() || !equipped.isDamaged()) {
                     info("Item repaired. Pausing to swap.");
                     if (!baritonePauseCommand.get().isEmpty()) {
@@ -526,11 +526,11 @@ public class Mendbot extends Module {
                     swapTimer--;
                     return;
                 }
-                
-                ItemStack equipped = targetIsOffhand ? 
-                    mc.player.getOffhandItem() : 
+
+                ItemStack equipped = targetIsOffhand ?
+                    mc.player.getOffhandItem() :
                     (targetEquipSlot != null ? mc.player.getItemBySlot(targetEquipSlot) : ItemStack.EMPTY);
-                    
+
                 if (!equipped.isEmpty()) {
                     int emptySlot = mc.player.getInventory().getFreeSlot();
                     if (targetIsOffhand) {
@@ -546,7 +546,7 @@ public class Mendbot extends Module {
                 currentRepairSlot = -1;
                 targetEquipSlot = null;
                 targetIsOffhand = false;
-                
+
                 if (!baritoneResumeCommand.get().isEmpty()) {
                     mc.player.connection.sendChat(baritoneResumeCommand.get());
                 }
@@ -674,7 +674,7 @@ public class Mendbot extends Module {
         ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
         if (!chest.is(Items.ELYTRA) || !chest.isDamaged()) {
             int elytra = findDamagedItem(stack -> stack.is(Items.ELYTRA));
-            if (elytra != -1) { InvUtils.move().from(elytra).toArmor(2); return true; } 
+            if (elytra != -1) { InvUtils.move().from(elytra).toArmor(2); return true; }
             else return false;
         }
         throwXpBottles();
@@ -684,7 +684,7 @@ public class Mendbot extends Module {
     private boolean handleToolMending() {
         ItemStack offHand = mc.player.getOffhandItem();
         if (isTool(offHand)) {
-            if (offHand.isDamaged()) { throwXpBottles(); return true; } 
+            if (offHand.isDamaged()) { throwXpBottles(); return true; }
             else { int slot = mc.player.getInventory().getFreeSlot(); if (slot != -1) { InvUtils.move().fromOffhand().to(slot); return true; } }
         }
         int damaged = findDamagedItem(this::isTool);

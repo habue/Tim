@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = AbstractClientPlayer.class, remap = false)
 public abstract class AbstractClientPlayerEntityMixin {
 
-    // Forces the vanilla FOV multiplier to 1.0 when ThirdSight is active, 
+    // Forces the vanilla FOV multiplier to 1.0 when ThirdSight is active,
     // completely cancelling the beacon effect FOV changes.
     @Inject(method = "getFieldOfViewModifier", at = @At("RETURN"), cancellable = true)
     private void onGetFovMultiplier(CallbackInfoReturnable<Float> cir) {

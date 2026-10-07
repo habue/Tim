@@ -94,7 +94,7 @@ public class ManorAssistant extends Module {
     private final Map<BlockPos, TargetType> targets = new ConcurrentHashMap<>();
     private final Set<ChunkPos> scannedChunks = new HashSet<>();
     private final Set<BlockPos> checkedContainers = new HashSet<>();
-    
+
     private final Set<Integer> notifiedEvokers = new HashSet<>();
     private final Set<Integer> notifiedVindicators = new HashSet<>();
     private final Set<Integer> notifiedTotems = new HashSet<>();
@@ -239,7 +239,7 @@ public class ManorAssistant extends Module {
         .name("chest-whitelist")
         .description("Items to alert you about when opening Chests.")
         .defaultValue(List.of(
-            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND, 
+            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND,
             Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.DIAMOND_AXE, Items.DIAMOND_SHOVEL, Items.DIAMOND_HOE,
             Items.DIAMOND_HELMET, Items.DIAMOND_CHESTPLATE, Items.DIAMOND_LEGGINGS, Items.DIAMOND_BOOTS,
             Items.ENDER_CHEST, Items.ENCHANTED_GOLDEN_APPLE, Items.ELYTRA,
@@ -377,7 +377,7 @@ public class ManorAssistant extends Module {
         if (performSafetyChecks()) return;
         checkForPlayers();
         updateContainerLogic();
-        checkOpenedContainerLoot(); 
+        checkOpenedContainerLoot();
         updateScanningLogic();
     }
 
@@ -594,7 +594,7 @@ public class ManorAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void scanBlockEntitiesInChunk(LevelChunk chunk) {
-        int minY = manorYLevel.get(); 
+        int minY = manorYLevel.get();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
             BlockPos pos = be.getBlockPos();
@@ -628,7 +628,7 @@ public class ManorAssistant extends Module {
 
     private void updateContainerLogic() {
         if (!autoOpenChests.get()) return;
-        
+
         if (interactTimeoutTimer > 0) interactTimeoutTimer--;
 
         if (mc.screen == null && !wasAutoOpened) {
@@ -664,13 +664,13 @@ public class ManorAssistant extends Module {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
-            
+
             if (!hasAlertedForCurrentScreen) {
                 for (int i = 0; i < screen.getMenu().slots.size(); i++) {
                     Slot slot = screen.getMenu().slots.get(i);
                     // Ignore player's own inventory contents to prevent false triggers
                     if (slot.container instanceof Inventory) continue;
-                    
+
                     ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
                         info("§cRare loot found in chest: §e" + stack.getHoverName().getString() + "§c!");
@@ -850,7 +850,7 @@ public class ManorAssistant extends Module {
         if (!autoDisableOnLowHealth.get()) return false;
         boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
             || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
-        if (hasTotem && mc.player.getHealth() <= 6) { 
+        if (hasTotem && mc.player.getHealth() <= 6) {
             error("Health is critical, disabling to prevent totem pop.");
             toggle();
             return true;

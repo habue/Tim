@@ -99,7 +99,7 @@ public class RocketPilot extends Module {
         .onChanged(v -> {
             if (!isActive() || mc.level == null) return;
             resetPatternState();
-            
+
             if (v != FlightMode.Ebounce) {
                 mc.options.keyUp.setDown(false);
                 mc.options.keyJump.setDown(false);
@@ -267,7 +267,7 @@ public class RocketPilot extends Module {
         .description("The flight pattern to follow. Manual allows free mouse look.")
         .defaultValue(FlightPattern.Manual)
         .visible(() -> flightMode.get() != FlightMode.Ebounce)
-        .onChanged(v -> { 
+        .onChanged(v -> {
             resetPatternState();
             resetDrunkSpiralState();
         })

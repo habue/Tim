@@ -31,7 +31,7 @@ public class PlayerEntityRendererMixin {
 
         if (player.equals(Minecraft.getInstance().player)) {
             scale = (float) illushine.getPlayerScale();
-        } 
+        }
         else if (illushine.getScaleOtherPlayers()) {
             scale = (float) illushine.getOtherPlayerScale();
         }

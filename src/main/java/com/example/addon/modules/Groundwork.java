@@ -935,7 +935,7 @@ public class Groundwork extends Module {
             checkAndNotifyEmpty();
             return -1;
         }
-        
+
         notifiedOutOfBlocks = false; // Reset notification flag if we have a valid block
 
         if (validSlots.size() == 1) return validSlots.get(0);
@@ -1053,8 +1053,8 @@ public class Groundwork extends Module {
     }
 
     private boolean isOutOfReach(BlockPos pos) {
-        // Use horizontal distance for reach. 
-        // This fixes the issue where a reach of 2.0 fails to reach the block directly under the player 
+        // Use horizontal distance for reach.
+        // This fixes the issue where a reach of 2.0 fails to reach the block directly under the player
         // (due to eye height making the 3D distance ~2.12).
         double dx = pos.getX() + 0.5 - mc.player.getX();
         double dz = pos.getZ() + 0.5 - mc.player.getZ();

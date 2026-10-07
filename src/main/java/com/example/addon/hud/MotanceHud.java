@@ -23,14 +23,14 @@ import net.minecraft.resources.Identifier;
 
 public class MotanceHud extends HudElement {
     public static final HudElementInfo<MotanceHud> INFO = new HudElementInfo<>(
-        Tim.HUD_GROUP, "Motance", 
+        Tim.HUD_GROUP, "Motance",
         "Motance",
         "Shows icons for sneaking, jumping, and sprinting.",
         MotanceHud::new
     );
 
     private static final Minecraft mc = Minecraft.getInstance();
-    
+
     private static final Identifier SPEED_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/mob_effect/speed.png");
     private static final Identifier SLOWNESS_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/mob_effect/slowness.png");
     private static final Identifier JUMP_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/mob_effect/jump_boost.png");
@@ -122,17 +122,17 @@ public class MotanceHud extends HudElement {
         .build()
     );
 
-    public MotanceHud() { 
-        super(INFO); 
+    public MotanceHud() {
+        super(INFO);
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
     public void render(HudRenderer renderer) {
-        if (mc.player == null) { 
-            setSize(0, 0); 
-            return; 
+        if (mc.player == null) {
+            setSize(0, 0);
+            return;
         }
 
         boolean isSprinting = mc.player.isSprinting();
@@ -190,14 +190,14 @@ public class MotanceHud extends HudElement {
         }
 
         // Initialize context once per render pass
-        
+
 
         double startX, startY;
         if (layout.get() == Layout.Inline) {
             if (alignment.get() == Alignment.Left)        startX = x + padH;
             else if (alignment.get() == Alignment.Center) startX = x + (totalW - contentW) / 2.0;
             else                                         startX = x + totalW - padH - contentW;
-            
+
             startY = y + padV;
 
             double curX = startX;
@@ -209,7 +209,7 @@ public class MotanceHud extends HudElement {
             if (alignment.get() == Alignment.Left)        startX = x + padH;
             else if (alignment.get() == Alignment.Center) startX = x + (totalW - iconSize) / 2.0;
             else                                         startX = x + totalW - padH - iconSize;
-            
+
             startY = y + padV;
 
             double curY = startY;

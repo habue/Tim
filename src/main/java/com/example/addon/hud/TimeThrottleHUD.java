@@ -127,7 +127,7 @@ public class TimeThrottleHUD extends HudElement {
     @Override
     public void render(HudRenderer renderer) {
         Timethrottle module = Modules.get().get(Timethrottle.class);
-        
+
         // Handle inactive state or editor preview
         if (module == null || !module.isActive()) {
             if (isInEditor()) {
@@ -204,7 +204,7 @@ public class TimeThrottleHUD extends HudElement {
 
         double contentW = maxTextW;
         double totalW = contentW + padH * 2;
-        
+
         int lineCount = 1 + (drawingSource ? 1 : 0);
         double textAndBarH = (lineCount * lineHeight) + ((lineCount - 1) * rowGap);
         double totalH = textAndBarH + padV * 2 + (showBar.get() ? barGap + barH : 0);
@@ -236,10 +236,10 @@ public class TimeThrottleHUD extends HudElement {
         if (showBar.get()) {
             double barX = getAlignedX(align, x, padH, totalW, barW);
             double barY = y + padV + textAndBarH + barGap;
-            
+
             // Draw background track
             renderer.quad(barX, barY, barW, barH, barBackgroundColor.get());
-            
+
             // Draw progress fill (clamped to 0-1 to prevent overflow)
             double progress = Math.max(0.0, Math.min(1.0, mult));
             if (progress > 0) {

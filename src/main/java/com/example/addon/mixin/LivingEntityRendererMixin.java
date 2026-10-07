@@ -34,11 +34,11 @@ public class LivingEntityRendererMixin {
             if (illushine == null || !illushine.isActive()) return;
 
             double scale = illushine.getMobScale(mob);
-            
+
             if (scale != 1.0) {
                 matrices.scale((float) scale, (float) scale, (float) scale);
             }
-            
+
         }
     }
 }

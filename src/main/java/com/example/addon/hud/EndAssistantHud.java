@@ -213,11 +213,11 @@ public class EndAssistantHud extends HudElement {
     public void render(HudRenderer renderer) {
         boolean inEditor = isInEditor();
         Gatekeeper tracker = Modules.get().get(Gatekeeper.class);
-        
+
         if (tracker == null || !tracker.isActive()) {
-            if (!inEditor) { 
-                setSize(0, 0); 
-                return; 
+            if (!inEditor) {
+                setSize(0, 0);
+                return;
             }
         }
 
@@ -230,7 +230,7 @@ public class EndAssistantHud extends HudElement {
                 stats.add(es);
             }
         }
-        
+
         // Provide dummy stats in the editor so the HUD can be moved around
         if (inEditor && stats.isEmpty()) {
             if (showElytrasFound.get()) stats.add(new EndStat("Elytras Found", 0, new ItemStack(net.minecraft.world.item.Items.ELYTRA), StatSeverity.Normal));

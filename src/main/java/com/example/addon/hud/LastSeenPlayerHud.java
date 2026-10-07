@@ -181,7 +181,7 @@ public class LastSeenPlayerHud extends HudElement {
         this.lastPlayerName = name;
         this.lastSeenTime = System.currentTimeMillis();
         this.lastTimeUpdateSecond = -1;
-        
+
         boolean currentCensor = censorshipMode.get();
         this.displayName = currentCensor && !name.equals("None")
             ? "X".repeat(name.length())
@@ -189,7 +189,7 @@ public class LastSeenPlayerHud extends HudElement {
 
         this.headStack = new ItemStack(Items.PLAYER_HEAD);
         this.headStack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(player.getGameProfile()));
-        
+
         getPlayerHead(player.getGameProfile());
     }
 

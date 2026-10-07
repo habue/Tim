@@ -574,16 +574,16 @@ public class Timethrottle extends Module {
     public boolean isChunkGiveUpActive() { return chunkGiveUpTicks > 0; }
     public SafetyReason getLastSafetyReason() { return lastSafetyReason; }
 
-    public int sourceCount() { 
-        return sources.length; 
+    public int sourceCount() {
+        return sources.length;
     }
 
-    public String sourceName(int i) { 
-        return (i >= 0 && i < sources.length) ? sources[i].name() : "?"; 
+    public String sourceName(int i) {
+        return (i >= 0 && i < sources.length) ? sources[i].name() : "?";
     }
 
-    public double evaluateSource(int i) { 
-        return (i >= 0 && i < sources.length) ? sources[i].evaluate() : NORMAL_SPEED; 
+    public double evaluateSource(int i) {
+        return (i >= 0 && i < sources.length) ? sources[i].evaluate() : NORMAL_SPEED;
     }
 
     @Override

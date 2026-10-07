@@ -216,7 +216,7 @@ public class ChambersAssistantHud extends HudElement {
         boolean showText = displayMode.get() == DisplayMode.Vertical && labelMode.get() != LabelMode.Icon;
 
         List<StatRow> rows = new ArrayList<>();
-        
+
         if (showSpawners.get())        addStat(rows, stats.get(0), showText);
         if (showOminousSpawners.get())  addStat(rows, stats.get(1), showText);
         if (showVaults.get())          addStat(rows, stats.get(2), showText);

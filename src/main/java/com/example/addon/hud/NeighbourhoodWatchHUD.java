@@ -955,7 +955,7 @@ public class NeighbourhoodWatchHUD extends HudElement {
             for (int i = 0; i < nearbyEntries.size(); i++) {
                 TrackedEntry e  = nearbyEntries.get(i);
                 String distStr  = showDistance.get() ? String.format(" %.0fm", e.nearestDist()) : "";
-                double w = iconTotalW 
+                double w = iconTotalW
                          + renderer.textWidth(e.typeName(), false, s)
                          + renderer.textWidth(distStr, false, s);
                 nearbyRowWidths[i] = w;

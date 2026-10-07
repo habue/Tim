@@ -19,7 +19,7 @@ public class EntityMixin {
         if (Minecraft.getInstance().player == null) return;
 
         Entity self = (Entity) (Object) this;
-        
+
         if (self instanceof Player player && player.equals(Minecraft.getInstance().player)) {
             Illushine illushine = Modules.get().get(Illushine.class);
             if (illushine != null && illushine.isActive()) {

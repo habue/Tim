@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = ClientPacketListener.class, remap = false)
 public class ClientPlayNetworkHandlerMixin {
-    
+
     @Inject(method = "handleBlockUpdate", at = @At("HEAD"))
     private void onBlockUpdate(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
         Datamine datamine = Modules.get().get(Datamine.class);

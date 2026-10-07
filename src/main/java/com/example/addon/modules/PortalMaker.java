@@ -48,7 +48,7 @@ public class PortalMaker extends Module {
     // ── Enums ──────────────────────────────────────────────────────
     public enum EntryMode    { None, Walk, Pearl }
     private enum RecycleState { IDLE, STEPPING_OUT, WAITING, RE_ENTERING }
-    
+
     public enum RenderMode {
         GLOW,
         SPECTRAL,
@@ -301,7 +301,7 @@ public class PortalMaker extends Module {
             try {
                 originalEnterPortal = BaritoneAPI.getSettings().enterPortal.value;
                 BaritoneAPI.getSettings().enterPortal.value = true;
-                
+
                 originalAllowPlace = BaritoneAPI.getSettings().allowPlace.value;
                 BaritoneAPI.getSettings().allowPlace.value = true;
 
@@ -389,7 +389,7 @@ public class PortalMaker extends Module {
         placementIndex   = 0;
         tickTimer        = 0;
         stopMovement();
-        
+
         // Restore Baritone's settings to what they were before
         if (useBaritone.get()) {
             try {
@@ -421,17 +421,17 @@ public class PortalMaker extends Module {
             return;
         }
 
-        try { 
-            if (mc.level.dimension() == null) return; 
-        } catch (Exception ignored) { 
-            return; 
+        try {
+            if (mc.level.dimension() == null) return;
+        } catch (Exception ignored) {
+            return;
         }
-        
+
         String currentDim;
         try {
             currentDim = mc.level.dimension().identifier().toString();
-        } catch (Exception e) { 
-            return; 
+        } catch (Exception e) {
+            return;
         }
 
         if (builtDimension.isEmpty()) builtDimension = currentDim;
@@ -515,7 +515,7 @@ public class PortalMaker extends Module {
 
             BlockPos target = portalFramePositions.get(placementIndex);
             if (!isChunkSafe(target)) return;
-            
+
             if (mc.level.getBlockState(target).getBlock() == Blocks.OBSIDIAN) { placementIndex++; return; }
 
             if (!mc.level.getBlockState(target).canBeReplaced()) {
@@ -535,7 +535,7 @@ public class PortalMaker extends Module {
                 // Vanilla placement: find an adjacent solid block to click against
                 Direction placeDir = null;
                 BlockPos neighborPos = null;
-                
+
                 for (Direction dir : Direction.values()) {
                     BlockPos neighbor = target.relative(dir);
                     BlockState neighborState = getSafeBlockState(neighbor);
@@ -546,7 +546,7 @@ public class PortalMaker extends Module {
                         break;
                     }
                 }
-                
+
                 if (neighborPos != null) {
                     // Click the exact face of the neighboring solid block
                     Vec3 hitVec = Vec3.atCenterOf(neighborPos).add(Vec3.atLowerCornerOf(placeDir.getUnitVec3i()).scale(0.5));
@@ -575,7 +575,7 @@ public class PortalMaker extends Module {
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (mc.level == null) return;
-        
+
         if (render.get() && !portalFramePositions.isEmpty()) {
             for (int i = placementIndex; i < portalFramePositions.size(); i++) {
                 BlockPos pos = portalFramePositions.get(i);
@@ -583,7 +583,7 @@ public class PortalMaker extends Module {
                 if (!mc.level.getBlockState(pos).canBeReplaced()) continue;
 
                 AABB box = new AABB(pos);
-                
+
                 if (renderMode.get() == RenderMode.PULSE) {
                     renderPulseBox(event, box, lineColor.get());
                 } else if (renderMode.get() == RenderMode.SPECTRAL) {
@@ -636,9 +636,9 @@ public class PortalMaker extends Module {
 
         switch (recycleState) {
             case STEPPING_OUT -> {
-                if (stepOutTarget == null) { 
-                    recycleState = RecycleState.WAITING; 
-                    return; 
+                if (stepOutTarget == null) {
+                    recycleState = RecycleState.WAITING;
+                    return;
                 }
 
                 // Wait for Baritone to finish pathing
@@ -656,7 +656,7 @@ public class PortalMaker extends Module {
                 // If Baritone is not idle, it is still walking. Do nothing and let it finish.
             }
             case WAITING -> {
-                stopMovement(); 
+                stopMovement();
                 if (recycleWaitTimer-- <= 0) {
                     recycleState = RecycleState.RE_ENTERING;
                     info("Wait complete. Re-entering portal...");
@@ -669,7 +669,7 @@ public class PortalMaker extends Module {
                     toggle();
                     return;
                 }
-                
+
                 // Wait for Baritone to finish pathing
                 if (isBaritoneIdle()) {
                     // If we aren't in the portal yet, issue the path command again
@@ -682,18 +682,18 @@ public class PortalMaker extends Module {
 
     private void startRecycle() {
         if (!useBaritone.get()) return;
-        
+
         if (mc.player == null || mc.level == null) {
             recycleState = RecycleState.IDLE;
             return;
         }
-        
+
         BlockPos playerPos = mc.player.blockPosition();
         if (!isChunkSafe(playerPos)) {
-            dimensionChangeCooldown = 10; 
+            dimensionChangeCooldown = 10;
             return;
         }
-        
+
         setupRecycleTarget();
         recycleState = RecycleState.STEPPING_OUT;
         recycleWaitTimer = recycleDelaySeconds.get() * 20;
@@ -708,10 +708,10 @@ public class PortalMaker extends Module {
         }
 
         BlockPos pos = mc.player.blockPosition();
-        
+
         if (!getSafeBlockState(pos).is(Blocks.NETHER_PORTAL)) {
             for (BlockPos p : BlockPos.betweenClosed(pos.offset(-5, -5, -5), pos.offset(5, 5, 5))) {
-                if (!isChunkSafe(p)) continue; 
+                if (!isChunkSafe(p)) continue;
                 if (getSafeBlockState(p).is(Blocks.NETHER_PORTAL)) {
                     pos = p;
                     break;
@@ -721,8 +721,8 @@ public class PortalMaker extends Module {
 
         if (getSafeBlockState(pos).is(Blocks.NETHER_PORTAL)) {
             BlockState state = getSafeBlockState(pos);
-            Direction.Axis axis = state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_AXIS) 
-                ? state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_AXIS) 
+            Direction.Axis axis = state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_AXIS)
+                ? state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_AXIS)
                 : Direction.Axis.X;
 
             int minC = axis == Direction.Axis.X ? pos.getX() : pos.getZ();
@@ -730,8 +730,8 @@ public class PortalMaker extends Module {
 
             int maxIterations = 20;
             while (maxIterations-- > 0) {
-                BlockPos checkPos = axis == Direction.Axis.X 
-                    ? new BlockPos(minC - 1, pos.getY(), pos.getZ()) 
+                BlockPos checkPos = axis == Direction.Axis.X
+                    ? new BlockPos(minC - 1, pos.getY(), pos.getZ())
                     : new BlockPos(pos.getX(), pos.getY(), minC - 1);
                 if (!isChunkSafe(checkPos)) break;
                 if (!getSafeBlockState(checkPos).is(Blocks.NETHER_PORTAL)) break;
@@ -740,8 +740,8 @@ public class PortalMaker extends Module {
 
             maxIterations = 20;
             while (maxIterations-- > 0) {
-                BlockPos checkPos = axis == Direction.Axis.X 
-                    ? new BlockPos(maxC + 1, pos.getY(), pos.getZ()) 
+                BlockPos checkPos = axis == Direction.Axis.X
+                    ? new BlockPos(maxC + 1, pos.getY(), pos.getZ())
                     : new BlockPos(pos.getX(), pos.getY(), maxC + 1);
                 if (!isChunkSafe(checkPos)) break;
                 if (!getSafeBlockState(checkPos).is(Blocks.NETHER_PORTAL)) break;
@@ -836,10 +836,10 @@ public class PortalMaker extends Module {
         // Use BlockPos.ofFloored to accurately get the block coordinates from the Vec3d.
         // This prevents rounding errors that could target the block adjacent to the portal.
         BlockPos targetPos = BlockPos.containing(target.x, target.y, target.z);
-        
+
         // Use the Baritone API directly to avoid command manager chat spam (prevents coordinate leaks)
         IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
-        
+
         // Only issue the path command if Baritone isn't already trying to path there
         // GoalBlock is used because it forces the player's feet into the exact portal block,
         // ensuring the teleport triggers reliably.
@@ -867,7 +867,7 @@ public class PortalMaker extends Module {
         mc.options.keyRight.setDown(false);
         mc.options.keySprint.setDown(false);
         mc.options.keyShift.setDown(false);
-        
+
         // Stop Baritone pathing silently
         try {
             IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
@@ -995,7 +995,7 @@ public class PortalMaker extends Module {
         for (int i = 0; i < 36; i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
             Item item = stack.getItem();
-            if (item == Items.DIRT || item == Items.COBBLESTONE || item == Items.NETHERRACK || 
+            if (item == Items.DIRT || item == Items.COBBLESTONE || item == Items.NETHERRACK ||
                 item == Items.STONE || item == Items.GRASS_BLOCK || item == Items.DEEPSLATE ||
                 item == Items.COBBLED_DEEPSLATE || item == Items.SAND || item == Items.GRAVEL ||
                 item == Items.GLASS || item == Items.OAK_PLANKS || item == Items.SPRUCE_PLANKS) {
@@ -1007,11 +1007,11 @@ public class PortalMaker extends Module {
 
     private boolean isMovingManually() {
         if (mc.screen != null) return false;
-        return Input.isKeyPressed(GLFW.GLFW_KEY_W) || 
+        return Input.isKeyPressed(GLFW.GLFW_KEY_W) ||
                Input.isKeyPressed(GLFW.GLFW_KEY_A) ||
-               Input.isKeyPressed(GLFW.GLFW_KEY_S) || 
+               Input.isKeyPressed(GLFW.GLFW_KEY_S) ||
                Input.isKeyPressed(GLFW.GLFW_KEY_D) ||
-               Input.isKeyPressed(GLFW.GLFW_KEY_SPACE) || 
+               Input.isKeyPressed(GLFW.GLFW_KEY_SPACE) ||
                Input.isKeyPressed(GLFW.GLFW_KEY_LEFT_SHIFT) ||
                Input.isKeyPressed(GLFW.GLFW_KEY_RIGHT_SHIFT);
     }

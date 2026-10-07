@@ -494,7 +494,7 @@ public class Datamine extends Module {
 
         this.fill();
         this.remine();
-        
+
         this.checkForNewItems();
         this.doAutoCollect();
     }
@@ -625,7 +625,7 @@ public class Datamine extends Module {
 
     private boolean isExcavatable(BlockPos pos) {
         if (pos == null) return false;
-        
+
         // Prevent mining any floor blocks if the player is on the ground
         if (this.excavatorIgnoreFloor.get() && this.mc.player.onGround()) {
             if (pos.getY() < this.mc.player.blockPosition().getY()) {
@@ -659,7 +659,7 @@ public class Datamine extends Module {
                     BlockPos pos = playerPos.offset(x, y, z);
                     if (this.isTracked(pos)) continue;
                     if (!this.isExcavatable(pos)) continue;
-                    
+
                     double dist = this.mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
                     if (dist < closestDist) {
                         closestDist = dist;
@@ -1207,13 +1207,13 @@ public class Datamine extends Module {
         if (this.swapMode.get() == SwapMode.Normal) {
             Hotbar.set(slot);
         }
-        
+
         Hotbar.sync(slot);
     }
 
     private void revertSlot() {
         if (!this.swapped || this.swapMode.get() != SwapMode.Silent) return;
-        
+
         // Re-syncs the actual client slot to the server
         Hotbar.sync(Hotbar.selected());
         this.swapped = false;

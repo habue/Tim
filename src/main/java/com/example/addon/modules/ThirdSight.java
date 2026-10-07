@@ -198,7 +198,7 @@ public class ThirdSight extends Module {
         cameraPitch = Math.max(-89.9f, Math.min(89.9f, mc.player.getXRot()));
 
         previousPerspective = mc.options.getCameraType();
-        
+
         // Start at current vanilla distance to allow smooth transition in
         currentDistance = (previousPerspective == CameraType.FIRST_PERSON) ? 0.0 : 4.0;
 
@@ -210,7 +210,7 @@ public class ThirdSight extends Module {
         noDistanceActive        = false;
         wasNoDistanceKeyPressed = false;
         wasScrollKeyPressed     = false;
-        
+
         originalFov = -1;
 
         // Sync scroll state on enable
@@ -316,7 +316,7 @@ public class ThirdSight extends Module {
         next = Math.max(1.0, Math.min(30.0, next)); // Clamp to slider bounds
 
         if (next == scrollTargetDistance) return;
-        
+
         scrollTargetDistance = next;
         lastKnownSliderDistance = distance.get(); // Prevent onTick from snapping it back to the slider
     }
@@ -403,7 +403,7 @@ public class ThirdSight extends Module {
     }
 
     /**
-     * Called by AbstractClientPlayerEntityMixin to counteract the vanilla FOV multiplier 
+     * Called by AbstractClientPlayerEntityMixin to counteract the vanilla FOV multiplier
      * (which causes the "beacon effect" FOV scaling from speed/jump boost).
      */
     public boolean isBeaconEffectCountered() {

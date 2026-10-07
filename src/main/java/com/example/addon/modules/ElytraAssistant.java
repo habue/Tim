@@ -396,7 +396,7 @@ public class ElytraAssistant extends Module {
             : targetSlot.get() - 1;
 
         ItemStack targetStack = mc.player.getInventory().getItem(selectedSlot);
-        
+
         // If the slot is occupied by something else, don't touch it.
         if (!targetStack.isEmpty() && !targetStack.is(Items.FIREWORK_ROCKET)) return;
 

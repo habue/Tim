@@ -110,7 +110,7 @@ public class Waypearl extends Module {
     // ═══════════════════════════════════════════════════════════════
 
     private static final Identifier BEAM_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/beacon_beam.png");
-    
+
     private static final Map<Integer, Vec3> BEAM_POS_CACHE = new ConcurrentHashMap<>();
 
     // ═══════════════════════════════════════════════════════════════
@@ -495,7 +495,7 @@ public class Waypearl extends Module {
     private Vec3              lastPos      = null;
     private int                stuckTicks   = 0;
     private int                jumpCooldown = 0;
-    
+
     private final Set<Integer> trackedGlowIds = Collections.synchronizedSet(new HashSet<>());
 
     // Auto-disconnect anti-spam state
@@ -1468,7 +1468,7 @@ public class Waypearl extends Module {
 
         int r = range.get();
         Map<String, Vec3[]> lines = columnLines.get();
-        
+
         Map<String, Vec3> activePearlPos = new HashMap<>();
         Set<Integer> activePearlIds = new HashSet<>();
 
@@ -1506,7 +1506,7 @@ public class Waypearl extends Module {
             if (pearlPos == null) continue;
 
             Vec3[] line = entry.getValue();
-            
+
             double cx = pearlPos.x;
             double cz = pearlPos.z;
             double botY = line[0].y;
@@ -1534,7 +1534,7 @@ public class Waypearl extends Module {
         for (Entity e : mc.level.entitiesForRendering()) {
             if (!(e instanceof ThrownEnderpearl pearl)) continue;
             if (mc.player.distanceTo(e) > r) continue;
-            
+
             if (!activePearlIds.contains(pearl.getId())) continue;
 
             boolean isOwn = pearl.getOwner() != null && pearl.getOwner().equals(mc.player);

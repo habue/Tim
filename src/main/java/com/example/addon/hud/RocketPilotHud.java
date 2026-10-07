@@ -481,7 +481,7 @@ public class RocketPilotHud extends HudElement {
                 if (used > 0 && elapsed > 1000) {
                     double msPerRocket = (double) elapsed / used;
                     long msRemaining = (long) (currentRockets * msPerRocket);
-                    
+
                     efficiency = (double) currentRockets / flightStartRockets;
 
                     if (showFlightTime.get()) {
@@ -558,7 +558,7 @@ public class RocketPilotHud extends HudElement {
         // Ensure a minimum width when only icons are shown so the element is visible
         if (showIcon && !showText) contentW = Math.max(contentW, iconSz);
         double totalW   = contentW + padH * 2;
-        
+
         double contentH = (hasStatus ? statusRowH + rowGap : 0)
                         + (hasDur ? statRowH + rowGap : 0)
                         + (hasRocket ? statRowH + rowGap : 0)
@@ -639,7 +639,7 @@ public class RocketPilotHud extends HudElement {
         if (showBar.get()) {
             double bx, by, bw, bh;
             SettingColor bCol = efficiency > 0.5 ? valueColor.get() : efficiency > 0.2 ? rocketWarningColor.get() : rocketCriticalColor.get();
-            
+
             if (!barVertical) {
                 bw = contentW;
                 bh = barSize;

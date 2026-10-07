@@ -489,7 +489,7 @@ public class BaromineHud extends HudElement {
             double textW = renderer.textWidth(st.label, false, s) + renderer.textWidth(st.value, false, s);
             double lineW = textW;
             if (showIcon && !iconVertical) lineW += iconSz + iconGap;
-            
+
             drawStatRow(renderer, s, curX, curY, contentRowW, padH, statRowH, lineHeight,
                 rightAlign, centerAlign, lineW, textW,
                 showIcon ? st.icon : ItemStack.EMPTY, iconSz, iconGap, iconPos,

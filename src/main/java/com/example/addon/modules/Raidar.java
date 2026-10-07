@@ -148,7 +148,7 @@ public class Raidar extends Module {
         .name("nether-obsidian")
         .description("Detects unnatural obsidian clusters in the Nether only. Ignores ruined portals automatically.")
         .defaultValue(true).build());
-    
+
     private final Setting<SettingColor> obsidianColor = sgObsidian.add(new ColorSetting.Builder()
         .name("obsidian-color").defaultValue(new SettingColor(30, 30, 30, 255)).visible(scanObsidian::get).build());
 
@@ -312,9 +312,9 @@ public class Raidar extends Module {
     private void onTick(TickEvent.Post event) {
         if (mc.player == null || mc.level == null) return;
 
-        if (!dirtyChunks.isEmpty()) { 
-            scannedChunks.removeAll(dirtyChunks); 
-            dirtyChunks.clear(); 
+        if (!dirtyChunks.isEmpty()) {
+            scannedChunks.removeAll(dirtyChunks);
+            dirtyChunks.clear();
         }
 
         BlockPos playerPos = mc.player.blockPosition();
@@ -426,7 +426,7 @@ public class Raidar extends Module {
         if (scanShulkers.get() && block instanceof ShulkerBoxBlock) return StashType.SHULKER;
         if (scanUtility.get() && (block == Blocks.FURNACE || block == Blocks.BLAST_FURNACE || block == Blocks.SMOKER || block == Blocks.HOPPER || block == Blocks.DISPENSER || block == Blocks.DROPPER)) return StashType.UTILITY;
         if (scanDecorative.get() && (block == Blocks.BREWING_STAND || block == Blocks.CRAFTER || block == Blocks.CHISELED_BOOKSHELF || block == Blocks.DECORATED_POT)) return StashType.DECORATIVE;
-        
+
         if (scanObsidian.get() && block == Blocks.OBSIDIAN) {
             if (mc.level != null && mc.level.dimension().equals(Level.NETHER)) {
                 return StashType.OBSIDIAN;
@@ -447,13 +447,13 @@ public class Raidar extends Module {
         List<MinecartChest> minecarts = mc.level.getEntitiesOfClass(MinecartChest.class, searchBox, e -> true);
         List<Set<MinecartChest>> clusters = new ArrayList<>();
         Set<MinecartChest> assigned = new HashSet<>();
-        
+
         for (MinecartChest m1 : minecarts) {
             if (assigned.contains(m1)) continue;
             Set<MinecartChest> cluster = new HashSet<>();
             cluster.add(m1);
             assigned.add(m1);
-            
+
             for (MinecartChest m2 : minecarts) {
                 if (assigned.contains(m2)) continue;
                 if (m1.distanceToSqr(m2) < 0.5) {
@@ -468,11 +468,11 @@ public class Raidar extends Module {
 
         for (Set<MinecartChest> cluster : clusters) {
             if (cluster.isEmpty()) continue;
-            
+
             int count = cluster.size();
             Vec3 centroid = new Vec3(0, 0, 0);
             UUID clusterId = null;
-            
+
             for (MinecartChest m : cluster) {
                 centroid = centroid.add(m.position());
                 if (clusterId == null || m.getUUID().compareTo(clusterId) < 0) {
@@ -481,7 +481,7 @@ public class Raidar extends Module {
             }
             centroid = centroid.scale(1.0 / count);
             BlockPos bpos = BlockPos.containing(centroid);
-            
+
             seenClusterIds.add(clusterId);
             updateStackedMinecartState(clusterId, bpos, centroid, count);
         }
@@ -510,11 +510,11 @@ public class Raidar extends Module {
         final int exitThreshold  = Math.max(1, entryThreshold - 1);
 
         StackedState s = knownStackedMinecarts.get(id);
-        if (s == null && count < entryThreshold) return; 
-        
+        if (s == null && count < entryThreshold) return;
+
         if (s == null) s = new StackedState();
         knownStackedMinecarts.put(id, s);
-        
+
         s.observedCount = count;
         s.lastBlockPos  = bpos;
         s.lastCentroid  = centroid;
@@ -660,17 +660,17 @@ public class Raidar extends Module {
         Set<BlockPos> active = new HashSet<>();
 
         List<BlockPos> stashKeys = List.copyOf(stashes.keySet());
-        
+
         for (BlockPos startPos : stashKeys) {
             if (visited.contains(startPos)) continue;
             StashType type = stashes.get(startPos);
             if (type == null) continue;
-            
+
             Set<BlockPos> component = new HashSet<>();
             Queue<BlockPos> queue = new LinkedList<>();
             AABB structureBox = new AABB(startPos);
             queue.add(startPos); visited.add(startPos);
-            
+
             while (!queue.isEmpty()) {
                 BlockPos current = queue.poll();
                 component.add(current);
@@ -691,10 +691,10 @@ public class Raidar extends Module {
                     continue;
                 }
             }
-            
+
             BlockPos anchor = componentAnchor(component);
             active.add(anchor);
-            
+
             StashCluster cluster = new StashCluster(structureBox.inflate(0.02), component, type);
             stashClusterMap.put(anchor, cluster);
         }
@@ -709,7 +709,7 @@ public class Raidar extends Module {
         int maxX = (int) Math.ceil(searchBox.maxX);
         int maxY = (int) Math.ceil(searchBox.maxY);
         int maxZ = (int) Math.ceil(searchBox.maxZ);
-        
+
         BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
@@ -736,7 +736,7 @@ public class Raidar extends Module {
     private void cleanupDistantStashes() {
         if (mc.player == null) return;
         double distSq = Math.pow(range.get() + 64, 2);
-        
+
         stashes.entrySet().removeIf(e -> e.getKey().distToCenterSqr(mc.player.position()) > distSq);
         stashClusterMap.entrySet().removeIf(e -> e.getValue().boundingBox.getCenter().distanceToSqr(mc.player.position()) > distSq);
 
@@ -748,14 +748,14 @@ public class Raidar extends Module {
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
         if (mc.level == null || mc.player == null) return;
-        
+
         StashType type = classifyBlock(event.newState.getBlock());
-        if (type != null) { 
+        if (type != null) {
             if (!isYAllowed(event.pos.getY())) return;
-            stashes.put(event.pos, type); 
-            stashesDirty = true; 
-        } else if (stashes.remove(event.pos) != null) { 
-            stashesDirty = true; 
+            stashes.put(event.pos, type);
+            stashesDirty = true;
+        } else if (stashes.remove(event.pos) != null) {
+            stashesDirty = true;
         }
 
         if (event.newState.getBlock() == Blocks.CRYING_OBSIDIAN || event.oldState.getBlock() == Blocks.CRYING_OBSIDIAN) {
@@ -838,7 +838,7 @@ public class Raidar extends Module {
                 if (state.lastBlockPos == null) continue;
                 List<MinecartChest> minecarts = mc.level.getEntitiesOfClass(
                     MinecartChest.class, new AABB(state.lastBlockPos), entity -> true);
-                
+
                 AABB renderBox = minecarts.isEmpty() ? new AABB(state.lastBlockPos).inflate(0.0625) : getMinecartChestBox(minecarts.get(0));
                 SettingColor color = state.stacked ? stackedMinecartColor.get() : chestMinecartColor.get();
 
@@ -939,8 +939,8 @@ public class Raidar extends Module {
     }
 
     private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
-        int layers = glowLayers.get(); 
-        double spread = glowSpread.get(); 
+        int layers = glowLayers.get();
+        double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
         for (int i = layers; i >= 1; i--) {
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i-1) / layers)));
@@ -1064,7 +1064,7 @@ public class Raidar extends Module {
     }
 
     private AABB getMinecartChestBox(MinecartChest minecart) {
-        AABB entityBox = minecart.getBoundingBox(); 
+        AABB entityBox = minecart.getBoundingBox();
         double chestSz = 14.0 / 16.0;
         double xPad = (entityBox.getXsize() - chestSz) / 2.0;
         double zPad = (entityBox.getZsize() - chestSz) / 2.0;
@@ -1103,15 +1103,15 @@ public class Raidar extends Module {
     public void markChunkDirty(ChunkPos cp) { scannedChunks.remove(cp); dirtyChunks.add(cp); stashesDirty = true; }
 
     private enum StashType { CHEST, BARREL, SHULKER, ENDER_CHEST, OBSIDIAN, UTILITY, DECORATIVE }
-    
+
     private static class StashCluster {
-        final AABB boundingBox; 
-        final Set<BlockPos> blocks; 
+        final AABB boundingBox;
+        final Set<BlockPos> blocks;
         final StashType type;
-        
+
         StashCluster(AABB bb, Set<BlockPos> pb, StashType t) {
-            this.boundingBox = bb; 
-            this.blocks = pb; 
+            this.boundingBox = bb;
+            this.blocks = pb;
             this.type = t;
         }
     }
@@ -1126,6 +1126,6 @@ public class Raidar extends Module {
         BlockPos lastBlockPos   = null;
         Vec3   lastCentroid    = null;
     }
-    
+
     private record BeamData(AABB box, SettingColor color) {}
 }

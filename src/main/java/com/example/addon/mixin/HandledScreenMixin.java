@@ -175,7 +175,7 @@ public abstract class HandledScreenMixin extends Screen {
                 int bx = this.leftPos + this.imageWidth - 70;
                 int by = this.topPos + 2;
                 this.addRenderableWidget(mouseOnly(Component.literal("Sort"),
-                    btn -> inv101.startSorting(), bx, by, 30, 14, 
+                    btn -> inv101.startSorting(), bx, by, 30, 14,
                     net.minecraft.client.gui.components.Tooltip.create(Component.literal("Sort shulkers by colour"))));
             }
         }
@@ -197,11 +197,11 @@ public abstract class HandledScreenMixin extends Screen {
     private void onRender(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if ((Object) this instanceof InventoryScreen && s1Button != null && s2Button != null) {
             int defaultX = (this.width - this.imageWidth) / 2;
-            boolean isRecipeBookOpen = this.leftPos > defaultX + 50; 
-            
+            boolean isRecipeBookOpen = this.leftPos > defaultX + 50;
+
             int bx = isRecipeBookOpen ? (this.leftPos + this.imageWidth + 5) : (this.leftPos - 25);
             int by = this.topPos;
-            
+
             s1Button.setPosition(bx, by);
             s2Button.setPosition(bx, by + 25);
         }

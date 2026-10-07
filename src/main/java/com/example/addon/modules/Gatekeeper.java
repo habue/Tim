@@ -163,10 +163,10 @@ public class Gatekeeper extends Module {
     // ── Render ─────────────────────────────────────────────────────
     private final Setting<ShapeMode> shapeMode = sgRender.add(new EnumSetting.Builder<ShapeMode>()
         .name("shape-mode").defaultValue(ShapeMode.Both).build());
-        
+
     private final Setting<RenderMode> renderMode = sgRender.add(new EnumSetting.Builder<RenderMode>()
         .name("render-mode").description("GLOW = layered bloom boxes. SPECTRAL = outline shader. PULSE = fading highlight.").defaultValue(RenderMode.GLOW).build());
-        
+
     private final Setting<Boolean> dynamicColors = sgRender.add(new BoolSetting.Builder()
         .name("dynamic-colors").defaultValue(false).build());
 
@@ -295,7 +295,7 @@ public class Gatekeeper extends Module {
         .name("chest-whitelist")
         .description("Items to alert you about when opening Chests.")
         .defaultValue(List.of(
-            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND, 
+            Items.NETHERITE_BLOCK, Items.NETHERITE_INGOT, Items.DIAMOND,
             Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.DIAMOND_AXE, Items.DIAMOND_SHOVEL, Items.DIAMOND_HOE,
             Items.DIAMOND_HELMET, Items.DIAMOND_CHESTPLATE, Items.DIAMOND_LEGGINGS, Items.DIAMOND_BOOTS,
             Items.ENDER_CHEST, Items.ENCHANTED_GOLDEN_APPLE, Items.ELYTRA,
@@ -457,7 +457,7 @@ public class Gatekeeper extends Module {
             eaCheckForPlayers();
             eaCheckLevitationEffect();
             eaUpdateContainerLogic();
-            eaCheckOpenedContainerLoot(); 
+            eaCheckOpenedContainerLoot();
             eaUpdateMilkDrink();
             eaUpdateScanningLogic();
         }
@@ -927,7 +927,7 @@ public class Gatekeeper extends Module {
     }
 
     private void eaScanBlockEntitiesInChunk(LevelChunk chunk) {
-        int minY = cityYLevel.get(); 
+        int minY = cityYLevel.get();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
             BlockPos pos = be.getBlockPos();
@@ -941,7 +941,7 @@ public class Gatekeeper extends Module {
 
     private void eaUpdateContainerLogic() {
         if (!autoOpenChests.get()) return;
-        
+
         if (interactTimeoutTimer > 0) interactTimeoutTimer--;
 
         if (mc.screen == null && !wasAutoOpened) {
@@ -976,12 +976,12 @@ public class Gatekeeper extends Module {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
-            
+
             if (!hasAlertedForCurrentScreen) {
                 for (int i = 0; i < screen.getMenu().slots.size(); i++) {
                     Slot slot = screen.getMenu().slots.get(i);
                     if (slot.container instanceof Inventory) continue;
-                    
+
                     ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
                         info("§cRare loot found in chest: §e" + stack.getHoverName().getString() + "§c!");
@@ -1010,7 +1010,7 @@ public class Gatekeeper extends Module {
         }
 
         boolean hasLevitation = mc.player.hasEffect(net.minecraft.world.effect.MobEffects.LEVITATION);
-        
+
         if (drinkTimer == 0 && hasLevitation && mc.screen == null) {
             int milkSlot = eaFindMilkBucket();
             if (milkSlot != -1) {
@@ -1154,7 +1154,7 @@ public class Gatekeeper extends Module {
         if (!autoDisableOnLowHealth.get()) return false;
         boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
             || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
-        if (hasTotem && mc.player.getHealth() <= 6) { 
+        if (hasTotem && mc.player.getHealth() <= 6) {
             error("Health is critical, disabling to prevent totem pop.");
             toggle();
             return true;
@@ -1169,19 +1169,19 @@ public class Gatekeeper extends Module {
     public List<EndAssistantHud.EndStat> getEndAssistantStats() {
         List<EndAssistantHud.EndStat> stats = new ArrayList<>();
         int chestsNearby = 0;
-        
+
         for (TargetType type : targets.values()) {
             if (type == TargetType.CONTAINER) chestsNearby++;
         }
-        
+
         int elytrasNearby = elytraFrameTargets.size();
         int shulkersNearby = shulkerTargets.size();
-        
+
         stats.add(new EndAssistantHud.EndStat("Elytras Found", totalElytrasFound, new ItemStack(Items.ELYTRA), totalElytrasFound > 0 ? EndAssistantHud.StatSeverity.Warning : EndAssistantHud.StatSeverity.Normal));
         stats.add(new EndAssistantHud.EndStat("Elytras Nearby", elytrasNearby, new ItemStack(Items.ELYTRA), elytrasNearby > 0 ? EndAssistantHud.StatSeverity.Critical : EndAssistantHud.StatSeverity.Normal));
         stats.add(new EndAssistantHud.EndStat("Chests Nearby", chestsNearby, new ItemStack(Items.CHEST), EndAssistantHud.StatSeverity.Normal));
         stats.add(new EndAssistantHud.EndStat("Shulkers", shulkersNearby, new ItemStack(Items.SHULKER_SHELL), shulkersNearby > 0 ? EndAssistantHud.StatSeverity.Warning : EndAssistantHud.StatSeverity.Normal));
-        
+
         return stats;
     }
 

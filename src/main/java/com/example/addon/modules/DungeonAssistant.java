@@ -195,7 +195,7 @@ public class DungeonAssistant extends Module {
         .defaultValue(100).min(-64).max(320).sliderMin(-64).sliderMax(320)
         .onChanged(v -> {
             scannedChunks.clear();
-            final int maxY = v; 
+            final int maxY = v;
             targets.entrySet().removeIf(entry -> {
                 TargetType type = entry.getValue();
                 if (type == TargetType.CHEST_MINECART || type == TargetType.MISROTATED_CHEST_MINECART || type == TargetType.DISPLACED_CHEST_MINECART) return false;
@@ -736,7 +736,7 @@ public class DungeonAssistant extends Module {
                 lastDimension = mc.level.dimension().identifier().toString();
             }
         }
-        
+
         rebuildSpectralRegistry();
     }
 
@@ -879,7 +879,7 @@ public class DungeonAssistant extends Module {
             for (BlockPos pos : spawnerTorches) {
                 if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
                 AABB torchBox = createPaddedBox(pos);
-                
+
                 if (isSpectral) {
                     event.renderer.box(torchBox, withAlpha(torchColor, spectralBlockFillAlpha.get()), withAlpha(torchColor, 0), ShapeMode.Sides, 0);
                 } else if (isPulse) {
@@ -975,12 +975,12 @@ public class DungeonAssistant extends Module {
         if (trackSpawnerMobs.get() && spawnerBeamMode.get() == SpawnerBeamMode.ALL && !activeSpawners.isEmpty()) {
             SettingColor activeBeamColor = spawnerBeamColor.get();
             double maxDistSq = Math.pow(range.get() * 16, 2);
-            
+
             for (BlockPos pos : activeSpawners) {
                 if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
                 if (pos.distToCenterSqr(mc.player.position()) > maxDistSq) continue;
                 if (mc.level.getBlockState(pos).isAir()) continue;
-                
+
                 beamsToRender.add(new BeamData(createPaddedBox(pos), activeBeamColor));
             }
         }
@@ -1708,7 +1708,7 @@ public class DungeonAssistant extends Module {
         for (BlockPos spawnerPos : spawnerPositions) {
             AABB searchBox = new AABB(spawnerPos).inflate(5);
             boolean hasMobs = false;
-            
+
             for (Mob mob : mc.level.getEntitiesOfClass(Mob.class, searchBox, e -> true)) {
                 if (spawnerPos.distToCenterSqr(mob.position()) <= 25) { // 5 blocks radius squared
                     spawnerMobTargets.add(mob);
@@ -1725,12 +1725,12 @@ public class DungeonAssistant extends Module {
                     }
                 }
             }
-            
+
             if (hasMobs) {
                 // Check for nearby chests to prevent false flags
                 boolean hasChestNearby = false;
                 double chestRadiusSq = Math.pow(spawnerChestRadius.get(), 2);
-                
+
                 for (Map.Entry<BlockPos, TargetType> targetEntry : targets.entrySet()) {
                     if (targetEntry.getValue() == TargetType.CHEST) {
                         if (spawnerPos.distSqr(targetEntry.getKey()) <= chestRadiusSq) {
@@ -1739,7 +1739,7 @@ public class DungeonAssistant extends Module {
                         }
                     }
                 }
-                
+
                 if (hasChestNearby) {
                     newActiveSpawners.add(spawnerPos);
                 }
@@ -1751,10 +1751,10 @@ public class DungeonAssistant extends Module {
             if (spawnerActionBarCooldown <= 0) {
                 Component message = Component.literal("⚠ Active Spawner Detected!").withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
                 com.example.addon.utils.PortCompat.displayMessage(message, true); // true sends it to the action bar (above hotbar)
-                
+
                 float volume = spawnerAlertVolume.get().floatValue();
                 mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), volume, 0.5f); // Low pitch pling
-                
+
                 spawnerActionBarCooldown = 60; // 3 seconds (20 ticks * 3)
             } else {
                 spawnerActionBarCooldown--;
@@ -1845,7 +1845,7 @@ public class DungeonAssistant extends Module {
         boolean doLowY         = trackLowYStoneDirt.get();
         if (!doCustomBlocks && !doMisrotated && !doLowY) return;
 
-        int          maxY     = dungeonYLevel.get(); 
+        int          maxY     = dungeonYLevel.get();
         List<Block>  filter   = doCustomBlocks ? filterBlocks.get() : List.of();
         LevelChunkSection[] sections = chunk.getSections();
 
@@ -1889,7 +1889,7 @@ public class DungeonAssistant extends Module {
     }
 
     private void scanBlockEntitiesInChunk(LevelChunk chunk) {
-        int maxY = dungeonYLevel.get(); 
+        int maxY = dungeonYLevel.get();
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
             BlockPos pos = be.getBlockPos();
@@ -1922,7 +1922,7 @@ public class DungeonAssistant extends Module {
 
         boolean isDisplaced = false;
         BlockState stateAtPos = mc.level.getBlockState(blockPos);
-        
+
         if (!stateAtPos.isAir() && !stateAtPos.getCollisionShape(mc.level, blockPos).isEmpty() && !(stateAtPos.getBlock() instanceof BaseRailBlock)) {
             isDisplaced = true;
         } else {
@@ -1930,11 +1930,11 @@ public class DungeonAssistant extends Module {
             double closestCenterZ = blockPos.getZ() + 0.5;
             double offsetX = Math.abs(exactPos.x - closestCenterX);
             double offsetZ = Math.abs(exactPos.z - closestCenterZ);
-            
+
             if (offsetX > 0.1 || offsetZ > 0.1) {
                 isDisplaced = true;
             }
-            
+
             if (!isDisplaced) {
                 boolean hasRail = false;
                 for (int y = 0; y >= -1; y--) {
@@ -1988,7 +1988,7 @@ public class DungeonAssistant extends Module {
 
             if (targetType != null) {
                 targets.put(pos, targetType);
-                
+
                 if (isSpectral) GlowingRegistry.add(minecart.getId(), color);
                 else GlowingRegistry.remove(minecart.getId());
 
@@ -2006,7 +2006,7 @@ public class DungeonAssistant extends Module {
         }
 
         targets.entrySet().removeIf(entry ->
-            (entry.getValue() == TargetType.CHEST_MINECART || entry.getValue() == TargetType.MISROTATED_CHEST_MINECART || entry.getValue() == TargetType.DISPLACED_CHEST_MINECART) 
+            (entry.getValue() == TargetType.CHEST_MINECART || entry.getValue() == TargetType.MISROTATED_CHEST_MINECART || entry.getValue() == TargetType.DISPLACED_CHEST_MINECART)
             && !currentPositions.contains(entry.getKey())
         );
     }

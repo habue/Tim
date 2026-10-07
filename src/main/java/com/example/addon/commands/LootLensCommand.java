@@ -8,7 +8,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 
 public class LootLensCommand extends Command {
-    
+
     public LootLensCommand() {
         super("loot-lens", "Allows you to toggle the Loot Lens module.");
     }

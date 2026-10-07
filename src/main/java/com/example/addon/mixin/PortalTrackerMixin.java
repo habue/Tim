@@ -37,7 +37,7 @@ public abstract class PortalTrackerMixin {
         // Only process if the block state actually changed
         if (!cir.getReturnValue()) return;
 
-        // We trigger if the NEW block is a portal (placement) 
+        // We trigger if the NEW block is a portal (placement)
         // Note: To detect removal, you'd ideally check the state before replacement,
         // but checking the new state is the most common use case for "marking dirty".
         boolean isPortalRelated = newState.is(Blocks.NETHER_PORTAL) ||

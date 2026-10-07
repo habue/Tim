@@ -279,7 +279,7 @@ public class InfoAssistantHud extends HudElement {
             renderer.quad(x, y, totalW, totalH, backgroundColor.get());
 
         // ── Hover Detection ───────────────────────────────────────────────────────
-        
+
         Row hoveredRow = null;
         double hoveredRowY = 0;
 
@@ -374,11 +374,11 @@ public class InfoAssistantHud extends HudElement {
             String desc = hoveredRow.description();
             double maxTipW = 200 * s;
             List<String> tipLines = wrapText(renderer, desc, maxTipW, s);
-            
+
             double tipW = 0;
             for (String line : tipLines) tipW = Math.max(tipW, renderer.textWidth(line, false, s));
             tipW += padH * 2;
-            
+
             double tipH = tipLines.size() * lh + (tipLines.size() - 1) * (2 * s) + padV * 2;
 
             double tipX = right ? x - tipW - 4 * s : x + totalW + 4 * s;
@@ -388,7 +388,7 @@ public class InfoAssistantHud extends HudElement {
             double tipY = Math.max(0, Math.min(hoveredRowY, mc.getWindow().getGuiScaledHeight() - tipH));
 
             renderer.quad(tipX, tipY, tipW, tipH, backgroundColor.get());
-            
+
             double textY = tipY + padV;
             for (String line : tipLines) {
                 renderer.text(line, tipX + padH, textY, descriptionColor.get(), false, s);
@@ -443,13 +443,13 @@ public class InfoAssistantHud extends HudElement {
         if (limit > 0 && rows.size() > limit) {
             int extra = rows.size() - limit;
             List<Row> truncated = new ArrayList<>(rows.subList(0, limit));
-            
+
             // Remove trailing category header to prevent orphaned brackets
             if (!truncated.isEmpty() && truncated.get(truncated.size() - 1).isHeader()) {
                 truncated.remove(truncated.size() - 1);
                 extra++;
             }
-            
+
             truncated.add(new Row(true, "[... and " + extra + " more]", null, null, null));
             rows = truncated;
         }

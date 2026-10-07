@@ -39,7 +39,7 @@ public class InGameHudMixin {
 
         int scaledWidth = client.getWindow().getGuiScaledWidth();
         int scaledHeight = client.getWindow().getGuiScaledHeight();
-        
+
         int startX = scaledWidth / 2 - 91;
         int startY = scaledHeight - 22;
 
