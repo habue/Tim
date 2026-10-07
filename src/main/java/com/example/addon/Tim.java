@@ -133,6 +133,7 @@ public class Tim extends MeteorAddon {
         Hud.get().register(ServerReportHUD.INFO);
         Hud.get().register(StatisticsInformation.INFO);
         Hud.get().register(TimeThrottleHUD.INFO);
+        LOG.info("Tim initialized: 35 modules and 20 HUD elements registered");
     }
 
     @Override

@@ -1,6 +1,5 @@
 package com.example.addon.modules;
 
-import java.lang.reflect.Method;
 
 import com.example.addon.Tim;
 
@@ -29,17 +28,17 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 public class Handhold extends Module {
-    
+
     // ─── Enums ────────────────────────────────────────────────────────────────────
     public enum Role { Leader, Follower }
     public enum OrbitSide { Left, Right }
-    
-    private enum FollowerState { 
-        TRACKING,        
-        PANIC_BOOST,     
-        WAITING          
+
+    private enum FollowerState {
+        TRACKING,
+        PANIC_BOOST,
+        WAITING
     }
-    
+
     private enum LeaderState {
         NORMAL,
         SLOWING_DOWN
@@ -219,17 +218,6 @@ public class Handhold extends Module {
     );
 
     // ─── Internal State ───────────────────────────────────────────────────────────
-    private static Method getFlagMethod;
-
-    static {
-        try {
-            getFlagMethod = Entity.class.getDeclaredMethod("getFlag", int.class);
-            getFlagMethod.setAccessible(true);
-        } catch (NoSuchMethodException e) {
-            Tim.LOG.error("Failed to find getFlag method", e);
-        }
-    }
-
     private boolean wasTargetFlying = false;
     private boolean forcedRocketPilot = false;
     private int obstaclePauseTimer = 0;
@@ -261,7 +249,7 @@ public class Handhold extends Module {
         wasInWorld = false;
         resetFollowerPanicState();
         resetLeaderSlowdownState();
-        
+
         if (role.get() == Role.Leader) info("Leading %s. Watching for disconnects.", targetName.get());
         else info("Following %s.", targetName.get());
     }
@@ -297,7 +285,7 @@ public class Handhold extends Module {
         if (rp != null && rp.isActive()) {
             savedRpMode = rp.flightMode.get();
             savedRpTargetY = rp.useTargetY.get();
-            
+
             // Force RocketPilot to stop controlling pitch and firing rockets
             rp.flightMode.set(RocketPilot.FlightMode.None);
             rp.useTargetY.set(false);
@@ -326,12 +314,7 @@ public class Handhold extends Module {
     }
 
     private boolean isFallFlying(Entity entity) {
-        if (getFlagMethod == null) return false;
-        try {
-            return (boolean) getFlagMethod.invoke(entity, 7);
-        } catch (Exception e) {
-            return false;
-        }
+        return entity instanceof net.minecraft.world.entity.LivingEntity living && living.isFallFlying();
     }
 
     private void forceDisconnect(String reason) {
@@ -365,30 +348,30 @@ public class Handhold extends Module {
 
         double targetYawExact = Math.toDegrees(Math.atan2(-diff.x, diff.z));
         float targetYaw = (float) targetYawExact;
-        
+
         double horizontalDist = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
-        
+
         if (horizontalDist < minFollowDistance.get()) {
             float offset = orbitOffset.get().floatValue();
             if (orbitSide.get() == OrbitSide.Right) offset = -offset;
             targetYaw += offset;
         }
-        
+
         float currentYaw = mc.player.getYRot();
         float diffYaw = Mth.wrapDegrees(targetYaw - currentYaw);
-        
+
         float desiredChange = diffYaw * rotationSpeed.get().floatValue();
-        
+
         if (limitRotationSpeed.get()) {
-            desiredChange = Mth.clamp(desiredChange, 
-                -maxRotationPerTick.get().floatValue(), 
+            desiredChange = Mth.clamp(desiredChange,
+                -maxRotationPerTick.get().floatValue(),
                  maxRotationPerTick.get().floatValue());
         }
-        
+
         if (Math.abs(desiredChange) < 0.1f) return;
-        
+
         float newYaw = currentYaw + desiredChange;
-        
+
         mc.player.setYRot(newYaw);
         mc.player.yBodyRot = newYaw;
         mc.player.yHeadRot = newYaw;
@@ -397,7 +380,7 @@ public class Handhold extends Module {
     private boolean isObstacleInWay(Vec3 targetPos) {
         if (!pauseOnObstacle.get()) return false;
         BlockHitResult hit = mc.level.clip(new ClipContext(
-            mc.player.getEyePosition(), targetPos, ClipContext.Block.COLLIDER, 
+            mc.player.getEyePosition(), targetPos, ClipContext.Block.COLLIDER,
             ClipContext.Fluid.NONE, mc.player
         ));
         return hit.getType() == HitResult.Type.BLOCK;
@@ -413,12 +396,12 @@ public class Handhold extends Module {
         // FOLLOWER LOGIC (Panic Boost State Machine)
         // ═══════════════════════════════════════════════════════════════════════
         if (role.get() == Role.Follower && safetyDisconnect.get() && !targetName.get().isEmpty()) {
-            
+
             if (wasInWorld && !targetExists && followerState == FollowerState.TRACKING) {
-                lastKnownYaw = mc.player.getYRot(); 
+                lastKnownYaw = mc.player.getYRot();
                 followerState = FollowerState.PANIC_BOOST;
-                panicTimer = 3; 
-                waitTimerTicks = (int)(disconnectDelay.get() * 20.0); 
+                panicTimer = 3;
+                waitTimerTicks = (int)(disconnectDelay.get() * 20.0);
                 hasFiredPanicRocket = false;
                 warning("Target lost visual! Firing panic rocket...");
             }
@@ -430,7 +413,7 @@ public class Handhold extends Module {
                 firePanicRocket();
                 panicTimer--;
                 if (panicTimer <= 0) followerState = FollowerState.WAITING;
-                return; 
+                return;
             }
 
             if (followerState == FollowerState.WAITING) {
@@ -439,7 +422,7 @@ public class Handhold extends Module {
                 mc.player.yHeadRot = lastKnownYaw;
 
                 waitTimerTicks--;
-                
+
                 if (targetExists) {
                     info("Target re-acquired! Resuming normal tracking.");
                     resetFollowerPanicState();
@@ -448,10 +431,10 @@ public class Handhold extends Module {
                     forceDisconnect("[Handhold] Safety Disconnect: Lost " + targetName.get() + ".");
                     return;
                 }
-                return; 
+                return;
             }
         }
-        
+
         // ═══════════════════════════════════════════════════════════════════════
         // SAFETY DISCONNECT (Applies to both, triggers if target just flat out logs out)
         // ═══════════════════════════════════════════════════════════════════════
@@ -517,23 +500,23 @@ public class Handhold extends Module {
                     mc.player.yHeadRot = mc.player.getYRot();
                 }
             }
-            return; 
+            return;
         }
 
         // ═══════════════════════════════════════════════════════════════════════
         // STANDARD FOLLOWER TRACKING LOGIC
         // ═══════════════════════════════════════════════════════════════════════
-        Player target = getTarget(); 
+        Player target = getTarget();
         boolean targetFlying = isFallFlying(target);
 
         if (lookAtTarget.get()) {
             if (obstaclePauseTimer > 0) {
                 obstaclePauseTimer--;
             } else {
-                Vec3 lookPos = targetFlying ? 
-                    target.position().add(target.getDeltaMovement().scale(5)) : 
+                Vec3 lookPos = targetFlying ?
+                    target.position().add(target.getDeltaMovement().scale(5)) :
                     target.position();
-                    
+
                 if (mc.player.isFallFlying() && isObstacleInWay(lookPos)) {
                     obstaclePauseTimer = obstaclePauseTicks.get();
                 } else {
@@ -587,7 +570,7 @@ public class Handhold extends Module {
             if (leaderState == LeaderState.SLOWING_DOWN) return "Slowing Down ⏳";
             return "Leading: " + (targetName.get().isEmpty() ? "None" : targetName.get());
         }
-        
+
         if (followerState == FollowerState.PANIC_BOOST) return "Panic Boost!";
         if (followerState == FollowerState.WAITING) {
             float remainingSecs = waitTimerTicks / 20.0f;

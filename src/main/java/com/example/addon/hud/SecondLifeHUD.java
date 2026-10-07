@@ -44,7 +44,7 @@ public class SecondLifeHUD extends HudElement {
     // ── Constants ─────────────────────────────────────────────────────────────
 
     private static final Minecraft mc = Minecraft.getInstance();
-    private static final ItemStack TOTEM_STACK = new ItemStack(Items.TOTEM_OF_UNDYING);
+    private static ItemStack totemStack;
 
     // ── Setting Groups ────────────────────────────────────────────────────────
 
@@ -380,7 +380,8 @@ public class SecondLifeHUD extends HudElement {
                 ix = (side == CountSide.Right) ? contentX : contentX + innerW - iconSz;
                 iy = contentY + (innerH - iconSz) / 2.0;
             }
-            renderer.item(TOTEM_STACK, (int) ix, (int) iy, iconScale.get().floatValue(), false);
+            if (totemStack == null) totemStack = new ItemStack(Items.TOTEM_OF_UNDYING);
+            renderer.item(totemStack, (int) ix, (int) iy, iconScale.get().floatValue(), false);
         }
 
         if (showText) {

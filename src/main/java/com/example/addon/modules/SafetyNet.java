@@ -219,13 +219,13 @@ public class SafetyNet extends Module {
     private boolean hasDisconnected;
     private int     warnTickCounter;
     private int     graceTickCounter;
-    
+
     private boolean chorusEscapeActive;
     private boolean hasTriggeredEat;
     private boolean wasChorusPressed;
 
     public SafetyNet() {
-        super(Tim.CATEGORY, "Safety Net", "Protects you from the void by warning, disconnecting, or chorus teleporting at low Y levels.");
+        super(Tim.CATEGORY, "safety-net", "Protects you from the void by warning, disconnecting, or chorus teleporting at low Y levels.");
     }
 
     // -------------------------------------------------------------------------
@@ -350,7 +350,7 @@ public class SafetyNet extends Module {
         if (mode == DimensionMode.Overworld && !inOverworld) return false;
         if (mode == DimensionMode.End && !inEnd) return false;
         if (mode == DimensionMode.Both && !inEnd && !inOverworld) return false; // Ignores Nether
-        
+
         return true;
     }
 

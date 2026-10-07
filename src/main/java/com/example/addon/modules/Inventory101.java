@@ -1,6 +1,5 @@
 package com.example.addon.modules;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -696,10 +695,10 @@ public class Inventory101 extends Module {
 
     public void openEnderChestPreview(ItemStack chestStack) {
         if (mc.player == null) return;
-        
+
         Screen previousScreen = mc.screen;
         SimpleContainer inventory = new SimpleContainer(27);
-        
+
         ItemContainerContents container = chestStack.get(DataComponents.CONTAINER);
         if (container != null) {
             int slot = 0;
@@ -976,12 +975,12 @@ public class Inventory101 extends Module {
             } else if (!moveAllActionTaken) {
                 double mouseX = mc.mouseHandler.xpos();
                 double mouseY = mc.mouseHandler.ypos();
-                
+
                 if (lastMouseX != -1) {
                     double deltaX = mouseX - lastMouseX;
                     double deltaY = mouseY - lastMouseY;
                     double dist   = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                    
+
                     if (dist > 1 && Math.abs(deltaY) < 14) {
                         int steps = (int) Math.ceil(dist / 2.0);
                         for (int i = 0; i <= steps; i++) {
@@ -995,13 +994,13 @@ public class Inventory101 extends Module {
                         }
                     }
                 }
-                
+
                 Slot focused = getFocusedSlot(screen);
                 if (focused != null && focused.hasItem() && !processedInDrag.contains(focused.index)) {
                     mc.gameMode.handleContainerInput(screen.getMenu().containerId, focused.index, 0, ContainerInput.QUICK_MOVE, mc.player);
                     processedInDrag.add(focused.index);
                 }
-                
+
                 lastMouseX = mouseX;
                 lastMouseY = mouseY;
             }
@@ -1546,40 +1545,12 @@ public class Inventory101 extends Module {
     }
 
     private int[] getGuiPos(AbstractContainerScreen<?> screen) {
-        try {
-            Field fX = AbstractContainerScreen.class.getDeclaredField("x"); fX.setAccessible(true);
-            Field fY = AbstractContainerScreen.class.getDeclaredField("y"); fY.setAccessible(true);
-            return new int[]{ fX.getInt(screen), fY.getInt(screen) };
-        } catch (Exception ignored) {}
-        try {
-            Field fX = AbstractContainerScreen.class.getDeclaredField("field_2776"); fX.setAccessible(true);
-            Field fY = AbstractContainerScreen.class.getDeclaredField("field_2777"); fY.setAccessible(true);
-            return new int[]{ fX.getInt(screen), fY.getInt(screen) };
-        } catch (Exception ignored) {}
-        try {
-            Field fW = AbstractContainerScreen.class.getDeclaredField("backgroundWidth");  fW.setAccessible(true);
-            Field fH = AbstractContainerScreen.class.getDeclaredField("backgroundHeight"); fH.setAccessible(true);
-            int bgW = fW.getInt(screen);
-            int bgH = fH.getInt(screen);
-            return new int[]{ (screen.width - bgW) / 2, (screen.height - bgH) / 2 };
-        } catch (Exception ignored) {}
-        return new int[]{ (screen.width - 176) / 2, (screen.height - 166) / 2 };
+        var accessor = (com.example.addon.mixin.HandledScreenAccessor) screen;
+        return new int[]{accessor.getGuiX(), accessor.getGuiY()};
     }
 
     private Slot getFocusedSlot(AbstractContainerScreen<?> screen) {
-        try {
-            Field f = AbstractContainerScreen.class.getDeclaredField("focusedSlot");
-            f.setAccessible(true);
-            return (Slot) f.get(screen);
-        } catch (Exception e) {
-            try {
-                Field f = AbstractContainerScreen.class.getDeclaredField("field_2787");
-                f.setAccessible(true);
-                return (Slot) f.get(screen);
-            } catch (Exception e2) {
-                return getSlotUnderMouse(screen);
-            }
-        }
+        return ((com.example.addon.mixin.HandledScreenAccessor) screen).getFocusedSlot();
     }
 
     private Slot getSlotUnderMouse(AbstractContainerScreen<?> screen) {

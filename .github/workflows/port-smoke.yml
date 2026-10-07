@@ -22,13 +22,13 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: 'true'
         run: |
           set +e
-          timeout 180s xvfb-run -a ./gradlew runClient --no-daemon > startup.log 2>&1
+          timeout 120s xvfb-run -a ./gradlew runClient --no-daemon > startup.log 2>&1
           result=$?
           set -e
           cat startup.log
           if [ "$result" -ne 0 ] && [ "$result" -ne 124 ]; then exit "$result"; fi
           test -f run/logs/latest.log
-          grep -q 'Initializing Tim - Trail Investigator Module' run/logs/latest.log
+          grep -q 'Tim initialized: 35 modules and 20 HUD elements registered' run/logs/latest.log
           if grep -E 'Mixin apply.*failed|InvalidMixinException|InvalidInjectionException|InjectionError|Minecraft has crashed|Reported exception thrown' startup.log run/logs/latest.log; then exit 1; fi
       - uses: actions/upload-artifact@v4
         if: always()
