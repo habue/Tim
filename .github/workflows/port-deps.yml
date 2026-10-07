@@ -1,0 +1,35 @@
+name: Prepare port dependencies
+on:
+  push:
+    branches: [meteor-26.1.2]
+    paths: [.github/workflows/port-deps.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - run: |
+          cat > /tmp/export.gradle <<'GRADLE'
+          allprojects {
+            afterEvaluate {
+              tasks.register('exportCompileClasspath', Copy) {
+                from configurations.compileClasspath
+                into layout.buildDirectory.dir('compile-classpath')
+              }
+            }
+          }
+          GRADLE
+          ./gradlew exportCompileClasspath -I /tmp/export.gradle --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: port-compile-classpath
+          path: build/compile-classpath
+          if-no-files-found: error
