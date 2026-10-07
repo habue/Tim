@@ -65,7 +65,7 @@ More modules/huds coming soon —
 
 ## Requirements
 
-- Minecraft **1.21.x** (or whichever version your addon targets — check `gradle/libs.versions.toml`)
+- Minecraft **26.1.2** (or whichever version your addon targets — check `gradle/libs.versions.toml`)
 - [Fabric Loader](https://fabricmc.net/use/installer/)
 - [Meteor Client](https://meteorclient.com/) (latest snapshot recommended for 2b2t compatibility)
 - This addon JAR
