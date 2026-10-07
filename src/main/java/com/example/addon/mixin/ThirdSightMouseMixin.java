@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = MouseHandler.class, remap = false)
 public class ThirdSightMouseMixin {
 
-    @Shadow private Minecraft minecraft;
+    @Shadow @org.spongepowered.asm.mixin.Final private Minecraft minecraft;
     @Shadow private double accumulatedDX;
     @Shadow private double accumulatedDY;
 

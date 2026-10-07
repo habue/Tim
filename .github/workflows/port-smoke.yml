@@ -22,7 +22,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: 'true'
         run: |
           set +e
-          timeout 300s xvfb-run -a ./gradlew runClient --no-daemon > startup.log 2>&1
+          timeout 180s xvfb-run -a ./gradlew runClient --no-daemon > startup.log 2>&1
           result=$?
           set -e
           cat startup.log
