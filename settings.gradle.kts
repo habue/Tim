@@ -9,4 +9,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "hunting-utilities"
+rootProject.name = "Tim"

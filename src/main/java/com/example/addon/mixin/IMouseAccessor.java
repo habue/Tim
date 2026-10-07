@@ -1,23 +1,23 @@
 package com.example.addon.mixin;
 
-import net.minecraft.client.Mouse;
+import net.minecraft.client.MouseHandler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
  * Exposes the private {@code cursorDeltaX} and {@code cursorDeltaY} fields
- * from {@link Mouse} so {@link ThirdSightMouseMixin} can read raw mouse
+ * from {@link MouseHandler} so {@link ThirdSightMouseMixin} can read raw mouse
  * movement without using reflection.
  *
  * Register in mixins.<modid>.json under "client":
  *   "IMouseAccessor"
  */
-@Mixin(Mouse.class)
+@Mixin(value = MouseHandler.class, remap = false)
 public interface IMouseAccessor {
 
-    @Accessor("cursorDeltaX")
+    @Accessor("accumulatedDX")
     double getCursorDeltaX();
 
-    @Accessor("cursorDeltaY")
+    @Accessor("accumulatedDY")
     double getCursorDeltaY();
 }

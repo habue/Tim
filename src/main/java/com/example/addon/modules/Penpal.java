@@ -261,11 +261,11 @@ public class Penpal extends Module {
     }
 
     private void executeSend(String target, String msg) {
-        if (mc.player == null || mc.getNetworkHandler() == null) return;
+        if (mc.player == null || mc.getConnection() == null) return;
         if (target.isEmpty() || msg.isEmpty()) return;
         
         target = target.trim();
-        mc.getNetworkHandler().sendChatCommand("msg " + target + " " + msg);
+        mc.getConnection().sendCommand("msg " + target + " " + msg);
         if (chatFeedback.get()) {
             info("Sent message to " + target + ".");
         }
@@ -273,9 +273,9 @@ public class Penpal extends Module {
 
     private boolean isPressed(Keybind key, Modifier modifier) {
         if (!key.isPressed()) return false;
-        if (mc.currentScreen != null) return false; // Don't trigger when in menus/chat
+        if (mc.screen != null) return false; // Don't trigger when in menus/chat
         
-        long handle = mc.getWindow().getHandle();
+        long handle = mc.getWindow().handle();
         boolean shiftDown = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
         boolean ctrlDown = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
         boolean altDown = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_ALT) == GLFW.GLFW_PRESS;

@@ -3,15 +3,14 @@ package com.example.addon.mixin;
 import com.example.addon.modules.Graveyard;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.MeteorClient;
-import net.minecraft.client.MinecraftClient;
 import meteordevelopment.orbit.EventHandler;
-
+import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(MinecraftClient.class)
+@Mixin(value = Minecraft.class, remap = false)
 public class GraveyardMixin {
 
     @Inject(method = "tick", at = @At("HEAD"))
@@ -19,8 +18,8 @@ public class GraveyardMixin {
         // Runs at the VERY beginning of each client tick
         // Usually prefer TickEvent.Pre instead — but useful if you need to act before almost everything
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null || mc.world == null) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return;
 
         Graveyard graveyard = Modules.get().get(Graveyard.class);
         if (graveyard == null || !graveyard.isActive()) return;

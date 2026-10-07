@@ -15,9 +15,9 @@ import meteordevelopment.meteorclient.systems.hud.HudElement;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ItemStack;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
 
 public class DuraPanelHUD extends HudElement {
 
@@ -28,7 +28,7 @@ public class DuraPanelHUD extends HudElement {
         DuraPanelHUD::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     // ── Setting Groups ────────────────────────────────────────────────────────
 
@@ -291,12 +291,12 @@ public class DuraPanelHUD extends HudElement {
             && labelMode.get() != LabelMode.Icon;
 
         List<SlotRow> rows = new ArrayList<>();
-        if (showHelmet.get())     addSlot(rows, mc.player.getEquippedStack(EquipmentSlot.HEAD),  showText);
-        if (showChestplate.get()) addSlot(rows, mc.player.getEquippedStack(EquipmentSlot.CHEST), showText);
-        if (showLeggings.get())   addSlot(rows, mc.player.getEquippedStack(EquipmentSlot.LEGS),  showText);
-        if (showBoots.get())      addSlot(rows, mc.player.getEquippedStack(EquipmentSlot.FEET),  showText);
-        if (showMainhand.get())   addSlot(rows, mc.player.getMainHandStack(),                     showText);
-        if (showOffhand.get())    addSlot(rows, mc.player.getOffHandStack(),                      showText);
+        if (showHelmet.get())     addSlot(rows, mc.player.getItemBySlot(EquipmentSlot.HEAD),  showText);
+        if (showChestplate.get()) addSlot(rows, mc.player.getItemBySlot(EquipmentSlot.CHEST), showText);
+        if (showLeggings.get())   addSlot(rows, mc.player.getItemBySlot(EquipmentSlot.LEGS),  showText);
+        if (showBoots.get())      addSlot(rows, mc.player.getItemBySlot(EquipmentSlot.FEET),  showText);
+        if (showMainhand.get())   addSlot(rows, mc.player.getMainHandItem(),                     showText);
+        if (showOffhand.get())    addSlot(rows, mc.player.getOffhandItem(),                      showText);
 
         if (rows.isEmpty()) { setSize(0, 0); return; }
 
@@ -461,14 +461,14 @@ public class DuraPanelHUD extends HudElement {
             return;
         }
 
-        if (!stack.isDamageable()) {
+        if (!stack.isDamageableItem()) {
             if (hideUnbreakable.get()) return;
-            String label = showText ? stack.getName().getString() + ": " : "";
+            String label = showText ? stack.getHoverName().getString() + ": " : "";
             rows.add(new SlotRow(stack, label, "∞", valueColor.get()));
             return;
         }
 
-        int    remaining = stack.getMaxDamage() - stack.getDamage();
+        int    remaining = stack.getMaxDamage() - stack.getDamageValue();
         int    max       = stack.getMaxDamage();
         double pct       = 100.0 * remaining / max;
 
@@ -483,7 +483,7 @@ public class DuraPanelHUD extends HudElement {
         else if (pct <= warningThreshold.get())  col = warningColor.get();
         else                                      col = valueColor.get();
 
-        String label = showText ? stack.getName().getString() + ": " : "";
+        String label = showText ? stack.getHoverName().getString() + ": " : "";
         rows.add(new SlotRow(stack, label, value, col));
     }
 

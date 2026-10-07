@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.example.addon.Tim;
 import com.example.addon.utils.GlowingRegistry;
-
+import com.mojang.blaze3d.vertex.PoseStack;
 import meteordevelopment.meteorclient.events.entity.EntityAddedEvent;
 import meteordevelopment.meteorclient.events.game.GameJoinedEvent;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
@@ -42,36 +42,35 @@ import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.TrapdoorBlock;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.block.entity.BeaconBlockEntityRenderer;
-import net.minecraft.client.sound.PositionedSoundInstance;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.projectile.thrown.EnderPearlEntity;
-import net.minecraft.registry.Registries;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.client.Camera;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.blockentity.BeaconRenderer;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownEnderpearl;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class Waypearl extends Module {
 
@@ -80,23 +79,23 @@ public class Waypearl extends Module {
     // ═══════════════════════════════════════════════════════════════
 
     public enum PingSound {
-        BeaconActivate   ("Beacon Activate",    SoundEvents.BLOCK_BEACON_ACTIVATE),
-        BeaconDeactivate ("Beacon Deactivate",  SoundEvents.BLOCK_BEACON_DEACTIVATE),
-        BellUse          ("Bell",               SoundEvents.BLOCK_BELL_USE),
-        ExperienceOrb    ("Experience Orb",     SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP),
-        PlayerLevelUp    ("Level Up",           SoundEvents.ENTITY_PLAYER_LEVELUP),
+        BeaconActivate   ("Beacon Activate",    SoundEvents.BEACON_ACTIVATE),
+        BeaconDeactivate ("Beacon Deactivate",  SoundEvents.BEACON_DEACTIVATE),
+        BellUse          ("Bell",               SoundEvents.BELL_BLOCK),
+        ExperienceOrb    ("Experience Orb",     SoundEvents.EXPERIENCE_ORB_PICKUP),
+        PlayerLevelUp    ("Level Up",           SoundEvents.PLAYER_LEVELUP),
         NoteBlockBell    ("Note Bell",          reg("block.note_block.bell")),
         NoteBlockChime   ("Note Chime",         reg("block.note_block.chime")),
         NoteBlockPling   ("Note Pling",         reg("block.note_block.pling")),
-        EnderEye         ("Ender Eye",          SoundEvents.ENTITY_ENDER_EYE_LAUNCH),
-        EndermanTeleport ("Enderman Teleport",  SoundEvents.ENTITY_ENDERMAN_TELEPORT);
+        EnderEye         ("Ender Eye",          SoundEvents.ENDER_EYE_LAUNCH),
+        EndermanTeleport ("Enderman Teleport",  SoundEvents.ENDERMAN_TELEPORT);
 
         public final String label;
         public final SoundEvent sound;
         PingSound(String label, SoundEvent sound) { this.label = label; this.sound = sound; }
         @Override public String toString() { return label; }
         private static SoundEvent reg(String id) {
-            return Registries.SOUND_EVENT.get(Identifier.of(id));
+            return BuiltInRegistries.SOUND_EVENT.getValue(Identifier.parse(id));
         }
     }
 
@@ -110,9 +109,9 @@ public class Waypearl extends Module {
     // Constants & Helpers
     // ═══════════════════════════════════════════════════════════════
 
-    private static final Identifier BEAM_TEXTURE = Identifier.of("minecraft", "textures/entity/beacon_beam.png");
+    private static final Identifier BEAM_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/beacon_beam.png");
     
-    private static final Map<Integer, Vec3d> BEAM_POS_CACHE = new ConcurrentHashMap<>();
+    private static final Map<Integer, Vec3> BEAM_POS_CACHE = new ConcurrentHashMap<>();
 
     // ═══════════════════════════════════════════════════════════════
     // Setting Groups
@@ -475,7 +474,7 @@ public class Waypearl extends Module {
     // State
     // ═══════════════════════════════════════════════════════════════
 
-    private final AtomicReference<Map<String, Vec3d[]>> columnLines = new AtomicReference<>(Collections.emptyMap());
+    private final AtomicReference<Map<String, Vec3[]>> columnLines = new AtomicReference<>(Collections.emptyMap());
     private final LinkedHashMap<Integer, PearlRecord> pearlMemory = new LinkedHashMap<>();
     private final Set<Integer> seenPearlIds = Collections.synchronizedSet(new HashSet<>());
 
@@ -490,10 +489,10 @@ public class Waypearl extends Module {
 
     private WalkState          walkState    = WalkState.IDLE;
     private BlockPos           walkTarget   = null;
-    private Vec3d              idlePosition = null;
-    private final Deque<Vec3d> waypoints    = new ArrayDeque<>();
+    private Vec3              idlePosition = null;
+    private final Deque<Vec3> waypoints    = new ArrayDeque<>();
     private int                walkTicks    = 0;
-    private Vec3d              lastPos      = null;
+    private Vec3              lastPos      = null;
     private int                stuckTicks   = 0;
     private int                jumpCooldown = 0;
     
@@ -642,19 +641,19 @@ public class Waypearl extends Module {
 
         long nowMs = System.currentTimeMillis();
         if (nowMs - lastTriggerMs.get() < pullCooldown.get() * 1000L) {
-            mc.player.sendMessage(Text.literal("[Waypearl] Cooldown active — ignoring."), false);
+            com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Cooldown active — ignoring."), false);
             return;
         }
 
         if (walkState != WalkState.IDLE && walkState != WalkState.ABORTED) {
-            mc.player.sendMessage(Text.literal("[Waypearl] Walker active — ignoring."), false);
+            com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Walker active — ignoring."), false);
             return;
         }
 
         lastTriggerMs.set(nowMs);
         pendingNotifyTarget = senderName;
         pullQueued.set(true);
-        mc.player.sendMessage(Text.literal("[Waypearl] Pull triggered by " + senderName + "."), false);
+        com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Pull triggered by " + senderName + "."), false);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -664,10 +663,10 @@ public class Waypearl extends Module {
     @EventHandler
     private void onEntityAdded(EntityAddedEvent event) {
         if (!disconnectEnabled.get()) return;
-        if (mc.world == null || mc.player == null) return;
-        if (mc.player.networkHandler == null) return;
+        if (mc.level == null || mc.player == null) return;
+        if (mc.player.connection == null) return;
 
-        if (!(event.entity instanceof PlayerEntity enteringPlayer)) return;
+        if (!(event.entity instanceof Player enteringPlayer)) return;
         if (enteringPlayer == mc.player) return;
         if (enteringPlayer.getId() == mc.player.getId()) return;
 
@@ -711,7 +710,7 @@ public class Waypearl extends Module {
                     lastDisconnectMsgMs = now;
                     try {
                         String msg = disconnectMessage.get().replace("{player}", enteringName);
-                        mc.player.networkHandler.sendChatMessage("/msg " + targetUser + " " + msg);
+                        mc.player.connection.sendChat("/msg " + targetUser + " " + msg);
                         info("Sent disconnect notice to §b" + targetUser + "§r — "
                             + enteringName + " entered render distance.");
                     } catch (Exception ignored) {
@@ -730,8 +729,8 @@ public class Waypearl extends Module {
         Thread.ofVirtual().name("Waypearl-disconnect").start(() -> {
             try {
                 Thread.sleep(150L);
-                if (mc.world != null && mc.player != null) {
-                    mc.world.disconnect();
+                if (mc.level != null && mc.player != null) {
+                    mc.level.disconnect(net.minecraft.client.multiplayer.ClientLevel.DEFAULT_QUIT_MESSAGE);
                 }
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
@@ -745,14 +744,14 @@ public class Waypearl extends Module {
 
     private boolean isPlayerOnline(String username) {
         if (username == null || username.isEmpty()) return false;
-        if (mc.player == null || mc.player.networkHandler == null) return false;
+        if (mc.player == null || mc.player.connection == null) return false;
 
-        PlayerListEntry entry = mc.player.networkHandler.getPlayerListEntry(username);
+        PlayerInfo entry = mc.player.connection.getPlayerInfo(username);
         if (entry != null) return true;
 
-        for (PlayerListEntry ple : mc.player.networkHandler.getPlayerList()) {
+        for (PlayerInfo ple : mc.player.connection.getOnlinePlayers()) {
             if (ple != null && ple.getProfile() != null
-                && username.equalsIgnoreCase(ple.getProfile().getName())) {
+                && username.equalsIgnoreCase(ple.getProfile().name())) {
                 return true;
             }
         }
@@ -765,12 +764,12 @@ public class Waypearl extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
-        if (mc.world.getRegistryKey() == World.NETHER) return;
+        if (mc.level == null || mc.player == null) return;
+        if (mc.level.dimension() == Level.NETHER) return;
 
         boolean selfPressed = selfTriggerKey.get().isPressed();
         if (selfPressed && !wasSelfTriggerPressed && moduleMode.get() == ModuleMode.Requester) {
-            if (mc.currentScreen == null && (walkState == WalkState.IDLE || walkState == WalkState.ABORTED)) {
+            if (mc.screen == null && (walkState == WalkState.IDLE || walkState == WalkState.ABORTED)) {
                 long now = System.currentTimeMillis();
                 if (now - lastTriggerMs.get() >= pullCooldown.get() * 1000L) {
                     sendSelfTrigger();
@@ -780,7 +779,7 @@ public class Waypearl extends Module {
         wasSelfTriggerPressed = selfPressed;
 
         if (pingQueued.compareAndSet(true, false) && soundEnabled.get()) {
-            mc.getSoundManager().play(PositionedSoundInstance.master(
+            mc.getSoundManager().play(SimpleSoundInstance.forUI(
                 pingSound.get().sound,
                 soundPitch.get().floatValue(),
                 soundVolume.get().floatValue()));
@@ -823,7 +822,7 @@ public class Waypearl extends Module {
             sb.append(chars.charAt((int) (Math.random() * chars.length())));
         }
 
-        mc.player.networkHandler.sendChatCommand("msg " + bot + " " + phrase + " " + sb.toString());
+        mc.player.connection.sendCommand("msg " + bot + " " + phrase + " " + sb.toString());
         info("Sent pull request to §6" + bot + " §r(phrase: " + phrase + ").");
     }
 
@@ -832,8 +831,8 @@ public class Waypearl extends Module {
     // ═══════════════════════════════════════════════════════════════
 
     private void updatePearlMemory() {
-        Map<String, Vec3d[]> lines = columnLines.get();
-        for (Entity e : mc.world.getEntities()) {
+        Map<String, Vec3[]> lines = columnLines.get();
+        for (Entity e : mc.level.entitiesForRendering()) {
             if (e.getType() != EntityType.ENDER_PEARL) continue;
             if (mc.player.distanceTo(e) > range.get()) continue;
 
@@ -843,12 +842,12 @@ public class Waypearl extends Module {
             if (!lines.containsKey(key)) continue;
             if (!seenPearlIds.add(e.getId())) continue;
 
-            Vec3d[] line     = lines.get(key);
+            Vec3[] line     = lines.get(key);
             int     topY     = (int) Math.floor(line[1].y);
             BlockPos trapdoor = findTrapdoor(px, topY, pz);
 
             String ownerName = "unknown";
-            if (e instanceof EnderPearlEntity pearl) {
+            if (e instanceof ThrownEnderpearl pearl) {
                 Entity owner = pearl.getOwner();
                 if (owner != null) ownerName = owner.getName().getString();
             }
@@ -861,7 +860,7 @@ public class Waypearl extends Module {
             pingQueued.set(true);
 
             String msg = "[Waypearl] New stasis pearl — owner: " + ownerName;
-            mc.player.sendMessage(Text.literal(msg), false);
+            com.example.addon.utils.PortCompat.displayMessage(Component.literal(msg), false);
         }
     }
 
@@ -873,11 +872,11 @@ public class Waypearl extends Module {
         if (!notifyEnabled.get()) return;
         if (target == null || target.isEmpty() || mc.player == null) return;
         String msg = notifyMessage.get().replace("{player}", target);
-        mc.player.networkHandler.sendChatMessage("/msg " + target + " " + msg);
+        mc.player.connection.sendChat("/msg " + target + " " + msg);
     }
 
     private void executePull(String requester) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         String botName = botUsername.get().trim();
 
@@ -886,7 +885,7 @@ public class Waypearl extends Module {
             for (PearlRecord rec : pearlMemory.values()) {
                 if (rec.trapdoor() == null) continue;
                 if (!pearlStillExists(rec.entityId())) continue;
-                if (!isAnyTrapdoor(mc.world.getBlockState(rec.trapdoor()).getBlock())) continue;
+                if (!isAnyTrapdoor(mc.level.getBlockState(rec.trapdoor()).getBlock())) continue;
 
                 if (!botName.isEmpty() && rec.owner().equalsIgnoreCase(botName)) continue;
 
@@ -903,12 +902,12 @@ public class Waypearl extends Module {
         }
 
         if (candidates.isEmpty()) {
-            mc.player.sendMessage(
-                Text.literal("[Waypearl] No valid stasis pearls found for " + (requester != null ? requester : "anyone") + "."), false);
+            com.example.addon.utils.PortCompat.displayMessage(
+                Component.literal("[Waypearl] No valid stasis pearls found for " + (requester != null ? requester : "anyone") + "."), false);
             return;
         }
 
-        Vec3d playerPos = mc.player.getPos();
+        Vec3 playerPos = mc.player.position();
 
         candidates.sort((a, b) -> {
             if (requester != null) {
@@ -919,8 +918,8 @@ public class Waypearl extends Module {
             }
 
             if (pullOrder.get() == PullOrder.NEAREST) {
-                double da = playerPos.squaredDistanceTo(Vec3d.ofCenter(a.trapdoor()));
-                double db = playerPos.squaredDistanceTo(Vec3d.ofCenter(b.trapdoor()));
+                double da = playerPos.distanceToSqr(Vec3.atCenterOf(a.trapdoor()));
+                double db = playerPos.distanceToSqr(Vec3.atCenterOf(b.trapdoor()));
                 return Double.compare(da, db);
             }
 
@@ -931,7 +930,7 @@ public class Waypearl extends Module {
     }
 
     private boolean pearlStillExists(int entityId) {
-        for (Entity e : mc.world.getEntities()) {
+        for (Entity e : mc.level.entitiesForRendering()) {
             if (e.getId() == entityId && e.getType() == EntityType.ENDER_PEARL) return true;
         }
         return false;
@@ -939,15 +938,15 @@ public class Waypearl extends Module {
 
     private List<PearlRecord> scanLiveTargets() {
         List<PearlRecord> found = new ArrayList<>();
-        Map<String, Vec3d[]> lines = columnLines.get();
+        Map<String, Vec3[]> lines = columnLines.get();
         String botName = botUsername.get().trim();
 
-        for (Entity e : mc.world.getEntities()) {
+        for (Entity e : mc.level.entitiesForRendering()) {
             if (e.getType() != EntityType.ENDER_PEARL) continue;
             if (mc.player.distanceTo(e) > range.get()) continue;
 
             String ownerName = "unknown";
-            if (e instanceof EnderPearlEntity pearl) {
+            if (e instanceof ThrownEnderpearl pearl) {
                 Entity owner = pearl.getOwner();
                 if (owner != null) ownerName = owner.getName().getString();
             }
@@ -957,7 +956,7 @@ public class Waypearl extends Module {
             int    px  = (int) Math.floor(e.getX());
             int    pz  = (int) Math.floor(e.getZ());
             String key = px + "," + pz;
-            Vec3d[] line = lines.get(key);
+            Vec3[] line = lines.get(key);
             if (line == null) continue;
 
             int topY = (int) Math.floor(line[1].y);
@@ -970,14 +969,14 @@ public class Waypearl extends Module {
     }
 
     private void dispatchTarget(BlockPos trapdoor) {
-        double dist = mc.player.getPos().distanceTo(Vec3d.ofCenter(trapdoor));
+        double dist = mc.player.position().distanceTo(Vec3.atCenterOf(trapdoor));
         if (dist <= interactReach.get()) {
             interactTrapdoor(trapdoor);
         } else if (walkerEnabled.get()) {
             beginWalk(trapdoor);
         } else {
-            mc.player.sendMessage(
-                Text.literal("[Waypearl] Trapdoor out of reach and walker is disabled."), false);
+            com.example.addon.utils.PortCompat.displayMessage(
+                Component.literal("[Waypearl] Trapdoor out of reach and walker is disabled."), false);
         }
     }
 
@@ -987,7 +986,7 @@ public class Waypearl extends Module {
 
     private void beginWalk(BlockPos target) {
         walkTarget   = target;
-        idlePosition = mc.player.getPos();
+        idlePosition = mc.player.position();
         walkState    = WalkState.WALKING_TO;
         walkTicks    = 0;
         stuckTicks   = 0;
@@ -995,7 +994,7 @@ public class Waypearl extends Module {
         lastPos      = idlePosition;
         waypoints.clear();
 
-        List<Vec3d> path = findPath(mc.player.getBlockPos(), target);
+        List<Vec3> path = findPath(mc.player.blockPosition(), target);
         if (path != null) {
             waypoints.addAll(path);
         } else {
@@ -1004,17 +1003,17 @@ public class Waypearl extends Module {
         }
 
         String msg = "[Waypearl] Path found (" + waypoints.size() + " waypoints).";
-        mc.player.sendMessage(Text.literal(msg), false);
+        com.example.addon.utils.PortCompat.displayMessage(Component.literal(msg), false);
     }
 
     private void tickWalker() {
         if (walkState == WalkState.IDLE || walkState == WalkState.ABORTED) return;
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             abortWalk("Player/world null.");
             return;
         }
 
-        Vec3d pos = mc.player.getPos();
+        Vec3 pos = mc.player.position();
 
         if (pos.y < voidAbortY.get()) {
             abortWalk("Fell below void-abort Y (" + voidAbortY.get() + ").");
@@ -1031,7 +1030,7 @@ public class Waypearl extends Module {
                 abortWalk("Player on fire.");
                 return;
             }
-            mc.player.sendMessage(Text.literal("[Waypearl] Warning: on fire."), false);
+            com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Warning: on fire."), false);
         }
 
         if (jumpCooldown > 0) jumpCooldown--;
@@ -1052,8 +1051,8 @@ public class Waypearl extends Module {
                         if (walkerJump.get()
                                 && stuckTicks >= jumpAttemptTicks.get()
                                 && jumpCooldown == 0
-                                && mc.player.isOnGround()) {
-                            mc.player.jump();
+                                && mc.player.onGround()) {
+                            mc.player.jumpFromGround();
                             jumpCooldown = jumpCooldownTicks.get();
                             stuckTicks = 0;
                         }
@@ -1068,12 +1067,12 @@ public class Waypearl extends Module {
                 lastPos = pos;
 
                 if (walkTarget != null
-                        && !isAnyTrapdoor(mc.world.getBlockState(walkTarget).getBlock())) {
+                        && !isAnyTrapdoor(mc.level.getBlockState(walkTarget).getBlock())) {
                     abortWalk("Trapdoor vanished.");
                     return;
                 }
 
-                Vec3d currentWaypoint = waypoints.peek();
+                Vec3 currentWaypoint = waypoints.peek();
                 if (currentWaypoint == null) {
                     stopMovement();
                     walkState = WalkState.PULLING;
@@ -1098,7 +1097,7 @@ public class Waypearl extends Module {
                 }
 
                 double distToFinal = walkTarget != null
-                    ? pos.distanceTo(Vec3d.ofCenter(walkTarget)) : distToWaypoint;
+                    ? pos.distanceTo(Vec3.atCenterOf(walkTarget)) : distToWaypoint;
                 boolean inSlowZone = distToFinal <= slowZoneRadius.get();
                 faceAndWalkToward(pos, currentWaypoint, !inSlowZone);
             }
@@ -1106,22 +1105,22 @@ public class Waypearl extends Module {
             case PULLING -> {
                 stopMovement();
                 if (sneakOnInteract.get()) {
-                    mc.options.sneakKey.setPressed(true);
-                    mc.player.setSneaking(true);
+                    mc.options.keyShift.setDown(true);
+                    mc.player.setShiftKeyDown(true);
                 }
                 interactTrapdoor(walkTarget);
                 if (sneakOnInteract.get()) {
-                    mc.options.sneakKey.setPressed(false);
-                    mc.player.setSneaking(false);
+                    mc.options.keyShift.setDown(false);
+                    mc.player.setShiftKeyDown(false);
                 }
 
                 if (returnAfterPull.get() && idlePosition != null) {
                     walkState  = WalkState.WALKING_BACK;
                     walkTicks  = 0;
                     stuckTicks = 0;
-                    lastPos    = mc.player.getPos();
+                    lastPos    = mc.player.position();
                     buildReturnWaypoints();
-                    mc.player.sendMessage(Text.literal("[Waypearl] Returning to idle."), false);
+                    com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Returning to idle."), false);
                 } else {
                     walkState = WalkState.IDLE;
                     resetWalkerFields();
@@ -1132,8 +1131,8 @@ public class Waypearl extends Module {
                 walkTicks++;
 
                 if (walkTicks > returnTimeoutTicks.get()) {
-                    mc.player.sendMessage(
-                        Text.literal("[Waypearl] Return timed out; stopping here."), false);
+                    com.example.addon.utils.PortCompat.displayMessage(
+                        Component.literal("[Waypearl] Return timed out; stopping here."), false);
                     stopMovement();
                     walkState = WalkState.IDLE;
                     resetWalkerFields();
@@ -1147,14 +1146,14 @@ public class Waypearl extends Module {
                         if (walkerJump.get()
                                 && stuckTicks >= jumpAttemptTicks.get()
                                 && jumpCooldown == 0
-                                && mc.player.isOnGround()) {
-                            mc.player.jump();
+                                && mc.player.onGround()) {
+                            mc.player.jumpFromGround();
                             jumpCooldown = jumpCooldownTicks.get();
                             stuckTicks = 0;
                         }
                         if (stuckTicks >= stuckThresholdTicks.get()) {
-                            mc.player.sendMessage(
-                                Text.literal("[Waypearl] Stuck returning; stopping here."), false);
+                            com.example.addon.utils.PortCompat.displayMessage(
+                                Component.literal("[Waypearl] Stuck returning; stopping here."), false);
                             stopMovement();
                             walkState = WalkState.IDLE;
                             resetWalkerFields();
@@ -1166,7 +1165,7 @@ public class Waypearl extends Module {
                 }
                 lastPos = pos;
 
-                Vec3d currentWaypoint = waypoints.peek();
+                Vec3 currentWaypoint = waypoints.peek();
                 if (currentWaypoint == null) {
                     snapToIdle();
                     return;
@@ -1197,8 +1196,8 @@ public class Waypearl extends Module {
 
     private void snapToIdle() {
         stopMovement();
-        mc.player.setPosition(idlePosition.x, idlePosition.y, idlePosition.z);
-        mc.player.sendMessage(Text.literal("[Waypearl] Returned to idle position."), false);
+        mc.player.setPos(idlePosition.x, idlePosition.y, idlePosition.z);
+        com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Returned to idle position."), false);
         walkState = WalkState.IDLE;
         resetWalkerFields();
     }
@@ -1207,11 +1206,11 @@ public class Waypearl extends Module {
         waypoints.clear();
         if (idlePosition == null) return;
 
-        List<Vec3d> path = findPath(mc.player.getBlockPos(), BlockPos.ofFloored(idlePosition));
+        List<Vec3> path = findPath(mc.player.blockPosition(), BlockPos.containing(idlePosition));
         if (path != null) waypoints.addAll(path);
     }
 
-    private List<Vec3d> findPath(BlockPos start, BlockPos end) {
+    private List<Vec3> findPath(BlockPos start, BlockPos end) {
         Queue<BlockPos> queue = new ArrayDeque<>();
         Map<BlockPos, BlockPos> parents = new HashMap<>();
         Set<BlockPos> visited = new HashSet<>();
@@ -1226,27 +1225,27 @@ public class Waypearl extends Module {
             iterations++;
             BlockPos curr = queue.poll();
 
-            if (curr.getSquaredDistance(end) <= interactReach.get() * interactReach.get()) {
+            if (curr.distSqr(end) <= interactReach.get() * interactReach.get()) {
                 currentEnd = curr;
                 break;
             }
 
             for (Direction dir : Direction.values()) {
                 if (dir.getAxis().isHorizontal()) {
-                    BlockPos next = curr.offset(dir);
+                    BlockPos next = curr.relative(dir);
                     if (isWalkable(next) && !visited.contains(next)) {
                         visited.add(next);
                         parents.put(next, curr);
                         queue.add(next);
                     }
-                    else if (isPassable(curr.up(2)) && isWalkable(next.up()) && !visited.contains(next.up())) {
-                        BlockPos up = next.up();
+                    else if (isPassable(curr.above(2)) && isWalkable(next.above()) && !visited.contains(next.above())) {
+                        BlockPos up = next.above();
                         visited.add(up);
                         parents.put(up, curr);
                         queue.add(up);
                     }
-                    else if (isPassable(next) && isPassable(next.up())) {
-                        BlockPos drop = next.down();
+                    else if (isPassable(next) && isPassable(next.above())) {
+                        BlockPos drop = next.below();
                         if (isWalkable(drop) && !visited.contains(drop)) {
                             visited.add(drop);
                             parents.put(drop, curr);
@@ -1259,10 +1258,10 @@ public class Waypearl extends Module {
 
         if (currentEnd == null) return null;
 
-        List<Vec3d> path = new ArrayList<>();
+        List<Vec3> path = new ArrayList<>();
         BlockPos p = currentEnd;
         while (p != null) {
-            path.add(Vec3d.ofCenter(p));
+            path.add(Vec3.atCenterOf(p));
             p = parents.get(p);
         }
         Collections.reverse(path);
@@ -1270,42 +1269,42 @@ public class Waypearl extends Module {
     }
 
     private boolean isPassable(BlockPos pos) {
-        return mc.world.getBlockState(pos).getCollisionShape(mc.world, pos).isEmpty();
+        return mc.level.getBlockState(pos).getCollisionShape(mc.level, pos).isEmpty();
     }
 
     private boolean isWalkable(BlockPos pos) {
-        return isPassable(pos) && isPassable(pos.up()) && !isPassable(pos.down());
+        return isPassable(pos) && isPassable(pos.above()) && !isPassable(pos.below());
     }
 
-    private void faceAndWalkToward(Vec3d from, Vec3d to, boolean sprint) {
+    private void faceAndWalkToward(Vec3 from, Vec3 to, boolean sprint) {
         double dx = to.x - from.x;
         double dz = to.z - from.z;
 
-        float pYaw = MathHelper.wrapDegrees(mc.player.getYaw());
+        float pYaw = Mth.wrapDegrees(mc.player.getYRot());
         float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float diff = MathHelper.wrapDegrees(targetYaw - pYaw);
+        float diff = Mth.wrapDegrees(targetYaw - pYaw);
 
-        mc.options.forwardKey.setPressed(diff > -67.5 && diff <= 67.5);
-        mc.options.backKey.setPressed(diff > 112.5 || diff <= -112.5);
-        mc.options.leftKey.setPressed(diff > -157.5 && diff <= -22.5);
-        mc.options.rightKey.setPressed(diff > 22.5 && diff <= 157.5);
+        mc.options.keyUp.setDown(diff > -67.5 && diff <= 67.5);
+        mc.options.keyDown.setDown(diff > 112.5 || diff <= -112.5);
+        mc.options.keyLeft.setDown(diff > -157.5 && diff <= -22.5);
+        mc.options.keyRight.setDown(diff > 22.5 && diff <= 157.5);
 
         boolean doSprint = walkerSprint.get() && sprint;
-        mc.options.sprintKey.setPressed(doSprint);
+        mc.options.keySprint.setDown(doSprint);
         mc.player.setSprinting(doSprint);
     }
 
     private void stopMovement() {
         if (mc.options == null) return;
-        mc.options.forwardKey.setPressed(false);
-        mc.options.backKey.setPressed(false);
-        mc.options.leftKey.setPressed(false);
-        mc.options.rightKey.setPressed(false);
-        mc.options.sprintKey.setPressed(false);
-        mc.options.sneakKey.setPressed(false);
+        mc.options.keyUp.setDown(false);
+        mc.options.keyDown.setDown(false);
+        mc.options.keyLeft.setDown(false);
+        mc.options.keyRight.setDown(false);
+        mc.options.keySprint.setDown(false);
+        mc.options.keyShift.setDown(false);
         if (mc.player != null) {
             mc.player.setSprinting(false);
-            mc.player.setSneaking(false);
+            mc.player.setShiftKeyDown(false);
         }
     }
 
@@ -1314,7 +1313,7 @@ public class Waypearl extends Module {
         walkState = WalkState.ABORTED;
         resetWalkerFields();
         if (mc.player != null)
-            mc.player.sendMessage(Text.literal("[Waypearl] Walker aborted: " + reason), false);
+            com.example.addon.utils.PortCompat.displayMessage(Component.literal("[Waypearl] Walker aborted: " + reason), false);
     }
 
     private void resetWalkerFields() {
@@ -1339,13 +1338,13 @@ public class Waypearl extends Module {
     private BlockPos findTrapdoor(int x, int topY, int z) {
         for (int dy = 0; dy <= 3; dy++) {
             BlockPos pos = new BlockPos(x, topY + dy, z);
-            if (isAnyTrapdoor(mc.world.getBlockState(pos).getBlock())) return pos;
+            if (isAnyTrapdoor(mc.level.getBlockState(pos).getBlock())) return pos;
         }
         return null;
     }
 
     private boolean isAnyTrapdoor(Block block) {
-        return block instanceof TrapdoorBlock
+        return block instanceof TrapDoorBlock
             || block == Blocks.OAK_TRAPDOOR      || block == Blocks.SPRUCE_TRAPDOOR
             || block == Blocks.BIRCH_TRAPDOOR    || block == Blocks.JUNGLE_TRAPDOOR
             || block == Blocks.ACACIA_TRAPDOOR   || block == Blocks.DARK_OAK_TRAPDOOR
@@ -1357,14 +1356,14 @@ public class Waypearl extends Module {
     private void interactTrapdoor(BlockPos pos) {
         if (pos == null) return;
         Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-            Vec3d          hitVec = Vec3d.ofCenter(pos);
+            Vec3          hitVec = Vec3.atCenterOf(pos);
             BlockHitResult hit    = new BlockHitResult(hitVec, Direction.UP, pos, false);
-            ActionResult   result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+            InteractionResult   result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
 
-            String base = result.isAccepted()
+            String base = result.consumesAction()
                 ? "[Waypearl] Trapdoor activated."
                 : "[Waypearl] Interaction failed.";
-            mc.player.sendMessage(Text.literal(base), false);
+            com.example.addon.utils.PortCompat.displayMessage(Component.literal(base), false);
         });
     }
 
@@ -1375,17 +1374,17 @@ public class Waypearl extends Module {
     private void triggerColumnScan() {
         if (!scanPending.compareAndSet(false, true)) return;
 
-        final BlockPos origin   = mc.player.getBlockPos();
+        final BlockPos origin   = mc.player.blockPosition();
         final int      r        = range.get();
         final int      chunkR   = (r >> 4) + 1;
         final int      originCX = origin.getX() >> 4;
         final int      originCZ = origin.getZ() >> 4;
 
-        final Map<Long, WorldChunk> snapshot = new HashMap<>();
+        final Map<Long, LevelChunk> snapshot = new HashMap<>();
         for (int cx = originCX - chunkR; cx <= originCX + chunkR; cx++) {
             for (int cz = originCZ - chunkR; cz <= originCZ + chunkR; cz++) {
-                WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(cx, cz);
-                if (chunk != null) snapshot.put(ChunkPos.toLong(cx, cz), chunk);
+                LevelChunk chunk = mc.level.getChunkSource().getChunkNow(cx, cz);
+                if (chunk != null) snapshot.put(ChunkPos.pack(cx, cz), chunk);
             }
         }
 
@@ -1395,9 +1394,9 @@ public class Waypearl extends Module {
         });
     }
 
-    private void runColumnScan(BlockPos origin, int r, Map<Long, WorldChunk> chunks) {
+    private void runColumnScan(BlockPos origin, int r, Map<Long, LevelChunk> chunks) {
         Map<String, int[]> yExtents = new HashMap<>();
-        Map<String, Vec3d[]> newLines = new LinkedHashMap<>();
+        Map<String, Vec3[]> newLines = new LinkedHashMap<>();
 
         int minX = origin.getX() - r, maxX = origin.getX() + r,
             minY = Math.max(origin.getY() - r, -64),
@@ -1406,7 +1405,7 @@ public class Waypearl extends Module {
 
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
-                WorldChunk chunk = chunks.get(ChunkPos.toLong(x >> 4, z >> 4));
+                LevelChunk chunk = chunks.get(ChunkPos.pack(x >> 4, z >> 4));
                 if (chunk == null) continue;
 
                 int lowestY = Integer.MAX_VALUE, highestY = Integer.MIN_VALUE;
@@ -1439,9 +1438,9 @@ public class Waypearl extends Module {
 
         for (Map.Entry<String, int[]> entry : yExtents.entrySet()) {
             int[] e = entry.getValue();
-            newLines.put(entry.getKey(), new Vec3d[]{
-                new Vec3d(e[0] + 0.5, e[1],     e[3] + 0.5),
-                new Vec3d(e[0] + 0.5, e[2] + 1, e[3] + 0.5)
+            newLines.put(entry.getKey(), new Vec3[]{
+                new Vec3(e[0] + 0.5, e[1],     e[3] + 0.5),
+                new Vec3(e[0] + 0.5, e[2] + 1, e[3] + 0.5)
             });
         }
         columnLines.set(newLines);
@@ -1452,7 +1451,7 @@ public class Waypearl extends Module {
     // ═══════════════════════════════════════════════════════════════
     @EventHandler
     private void onRender3D(Render3DEvent event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         if (renderMode.get() == RenderMode.Default) {
             renderDefaultMode(event);
@@ -1468,20 +1467,20 @@ public class Waypearl extends Module {
         if (!doBeam && !doCap) return;
 
         int r = range.get();
-        Map<String, Vec3d[]> lines = columnLines.get();
+        Map<String, Vec3[]> lines = columnLines.get();
         
-        Map<String, Vec3d> activePearlPos = new HashMap<>();
+        Map<String, Vec3> activePearlPos = new HashMap<>();
         Set<Integer> activePearlIds = new HashSet<>();
 
-        for (Entity e : mc.world.getEntities()) {
+        for (Entity e : mc.level.entitiesForRendering()) {
             if (e.getType() != EntityType.ENDER_PEARL) continue;
             if (mc.player.distanceTo(e) > r) continue;
 
-            Vec3d pos = e.getLerpedPos(mc.getRenderTickCounter().getTickDelta(true));
+            Vec3 pos = e.getPosition(mc.getDeltaTracker().getGameTimeDeltaPartialTick(true));
             int    px  = (int) Math.floor(e.getX());
             int    pz  = (int) Math.floor(e.getZ());
             String key = px + "," + pz;
-            Vec3d[] line = lines.get(key);
+            Vec3[] line = lines.get(key);
 
             if (line != null && pos.y >= line[0].y) {
                 activePearlPos.put(key, pos);
@@ -1502,11 +1501,11 @@ public class Waypearl extends Module {
         ShapeMode    capMode  = capShapeMode.get();
         boolean      capBloom = capGlow.get();
 
-        for (Map.Entry<String, Vec3d[]> entry : lines.entrySet()) {
-            Vec3d pearlPos = activePearlPos.get(entry.getKey());
+        for (Map.Entry<String, Vec3[]> entry : lines.entrySet()) {
+            Vec3 pearlPos = activePearlPos.get(entry.getKey());
             if (pearlPos == null) continue;
 
-            Vec3d[] line = entry.getValue();
+            Vec3[] line = entry.getValue();
             
             double cx = pearlPos.x;
             double cz = pearlPos.z;
@@ -1532,8 +1531,8 @@ public class Waypearl extends Module {
             }
         }
 
-        for (Entity e : mc.world.getEntities()) {
-            if (!(e instanceof EnderPearlEntity pearl)) continue;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (!(e instanceof ThrownEnderpearl pearl)) continue;
             if (mc.player.distanceTo(e) > r) continue;
             
             if (!activePearlIds.contains(pearl.getId())) continue;
@@ -1551,7 +1550,7 @@ public class Waypearl extends Module {
 
         for (Iterator<Integer> it = trackedGlowIds.iterator(); it.hasNext(); ) {
             int id = it.next();
-            if (!activePearlIds.contains(id) || mc.world.getEntityById(id) == null) {
+            if (!activePearlIds.contains(id) || mc.level.getEntity(id) == null) {
                 GlowingRegistry.remove(id);
                 it.remove();
             }
@@ -1562,8 +1561,8 @@ public class Waypearl extends Module {
         int r = range.get();
         Set<Integer> activePearlIds = new HashSet<>();
 
-        for (Entity e : mc.world.getEntities()) {
-            if (!(e instanceof EnderPearlEntity pearl)) continue;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (!(e instanceof ThrownEnderpearl pearl)) continue;
             if (mc.player.distanceTo(e) > r) continue;
 
             int pearlId = pearl.getId();
@@ -1607,13 +1606,13 @@ public class Waypearl extends Module {
 
         for (Iterator<Integer> it = trackedGlowIds.iterator(); it.hasNext(); ) {
             int id = it.next();
-            if (!activePearlIds.contains(id) || mc.world.getEntityById(id) == null) {
+            if (!activePearlIds.contains(id) || mc.level.getEntity(id) == null) {
                 GlowingRegistry.remove(id);
                 it.remove();
             }
         }
 
-        BEAM_POS_CACHE.keySet().removeIf(id -> mc.world.getEntityById(id) == null);
+        BEAM_POS_CACHE.keySet().removeIf(id -> mc.level.getEntity(id) == null);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1628,40 +1627,40 @@ public class Waypearl extends Module {
         return (255 << 24) | (r << 16) | (g << 8) | b;
     }
 
-    private boolean isInBubbleColumn(EnderPearlEntity pearl) {
-        if (mc.world == null) return false;
-        BlockPos pos = BlockPos.ofFloored(pearl.getPos());
-        return mc.world.getBlockState(pos).isOf(Blocks.BUBBLE_COLUMN)
-            || mc.world.getBlockState(pos.down()).isOf(Blocks.BUBBLE_COLUMN);
+    private boolean isInBubbleColumn(ThrownEnderpearl pearl) {
+        if (mc.level == null) return false;
+        BlockPos pos = BlockPos.containing(pearl.position());
+        return mc.level.getBlockState(pos).is(Blocks.BUBBLE_COLUMN)
+            || mc.level.getBlockState(pos.below()).is(Blocks.BUBBLE_COLUMN);
     }
 
-    private Vec3d getOrCreateBeamPos(EnderPearlEntity pearl) {
+    private Vec3 getOrCreateBeamPos(ThrownEnderpearl pearl) {
         return BEAM_POS_CACHE.computeIfAbsent(pearl.getId(), id -> {
             double x = pearl.getX();
             double y = pearl.getY();
             double z = pearl.getZ();
-            BlockPos.Mutable pos = new BlockPos.Mutable();
+            BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
             for (int i = 1; i < 256; i++) {
                 pos.set((int) Math.floor(x), (int) (y - i), (int) Math.floor(z));
-                BlockState state = mc.world.getBlockState(pos);
+                BlockState state = mc.level.getBlockState(pos);
 
-                if (!state.isOf(Blocks.WATER) && !state.isOf(Blocks.BUBBLE_COLUMN)) {
-                    return new Vec3d(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
+                if (!state.is(Blocks.WATER) && !state.is(Blocks.BUBBLE_COLUMN)) {
+                    return new Vec3(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
                 }
             }
-            return new Vec3d(Math.floor(x) + 0.5, y - 256, Math.floor(z) + 0.5);
+            return new Vec3(Math.floor(x) + 0.5, y - 256, Math.floor(z) + 0.5);
         });
     }
 
-    private void renderPearlsOnlyBeam(Render3DEvent event, EnderPearlEntity pearl,
+    private void renderPearlsOnlyBeam(Render3DEvent event, ThrownEnderpearl pearl,
                                       SettingColor color, float innerRadius, float outerRadius, int height) {
-        Camera camera = mc.gameRenderer.getCamera();
-        Vec3d camPos = camera.getPos();
-        Vec3d base = getOrCreateBeamPos(pearl);
+        Camera camera = mc.gameRenderer.getMainCamera();
+        Vec3 camPos = camera.position();
+        Vec3 base = getOrCreateBeamPos(pearl);
 
-        MatrixStack matrices = event.matrices;
-        matrices.push();
+        PoseStack matrices = event.matrices;
+        matrices.pushPose();
 
         matrices.translate(
             base.x - camPos.x - 0.5,
@@ -1669,16 +1668,18 @@ public class Waypearl extends Module {
             base.z - camPos.z - 0.5
         );
 
-        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        MultiBufferSource.BufferSource immediate = mc.renderBuffers().bufferSource();
 
-        BeaconBlockEntityRenderer.renderBeam(
-            matrices, immediate, BEAM_TEXTURE, event.tickDelta,
-            1.0f, mc.world.getTime(), 0, height,
+        BeaconRenderer.submitBeaconBeam(
+            matrices, mc.gameRenderer.getSubmitNodeStorage(), BEAM_TEXTURE, 1.0f,
+            (mc.level.getGameTime() % 40) + event.tickDelta, 0, height,
             color.getPacked(), innerRadius, outerRadius
         );
 
-        immediate.draw();
-        matrices.pop();
+        mc.gameRenderer.getFeatureRenderDispatcher().renderAllFeatures();
+        mc.gameRenderer.getFeatureRenderDispatcher().clearSubmitNodes();
+        immediate.endBatch();
+        matrices.popPose();
     }
 
     private void drawGlowBeam(Render3DEvent event, double cx, double botY, double cz, double topY,
@@ -1687,11 +1688,11 @@ public class Waypearl extends Module {
         for (int i = layers; i >= 1; i--) {
             double exp   = spread * i;
             int    alpha = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i - 1) / layers)));
-            event.renderer.box(new Box(cx - halfCore - exp, botY, cz - halfCore - exp,
+            event.renderer.box(new AABB(cx - halfCore - exp, botY, cz - halfCore - exp,
                                        cx + halfCore + exp, topY, cz + halfCore + exp),
                 withAlpha(glow, alpha), withAlpha(glow, 0), ShapeMode.Sides, 0);
         }
-        event.renderer.box(new Box(cx - halfCore, botY, cz - halfCore,
+        event.renderer.box(new AABB(cx - halfCore, botY, cz - halfCore,
                                    cx + halfCore, topY, cz + halfCore),
             withAlpha(core, 180), core, ShapeMode.Both, 0);
     }
@@ -1704,12 +1705,12 @@ public class Waypearl extends Module {
             for (int i = layers; i >= 1; i--) {
                 double exp   = spread * i;
                 int    alpha = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i - 1) / layers)));
-                event.renderer.box(new Box(cx - halfXZ - exp, minY, cz - halfXZ - exp,
+                event.renderer.box(new AABB(cx - halfXZ - exp, minY, cz - halfXZ - exp,
                                            cx + halfXZ + exp, maxY, cz + halfXZ + exp),
                     withAlpha(color, alpha), withAlpha(color, 0), ShapeMode.Sides, 0);
             }
         }
-        event.renderer.box(new Box(cx - halfXZ, minY, cz - halfXZ,
+        event.renderer.box(new AABB(cx - halfXZ, minY, cz - halfXZ,
                                    cx + halfXZ, maxY, cz + halfXZ),
             withAlpha(color, color.a), color, mode, 0);
     }
@@ -1718,7 +1719,7 @@ public class Waypearl extends Module {
     // Utilities
     // ═══════════════════════════════════════════════════════════════
 
-    private double xzDist(Vec3d a, Vec3d b) {
+    private double xzDist(Vec3 a, Vec3 b) {
         double dx = a.x - b.x, dz = a.z - b.z;
         return Math.sqrt(dx * dx + dz * dz);
     }

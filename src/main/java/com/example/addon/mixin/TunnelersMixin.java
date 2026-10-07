@@ -4,13 +4,12 @@ import com.example.addon.modules.EightToOne;
 import com.example.addon.modules.Gatekeeper;
 import com.example.addon.modules.Tunnelers;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.client.world.ClientChunkManager;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.packet.s2c.play.ChunkData;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
-import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.util.math.ChunkPos;
+import net.minecraft.client.multiplayer.ClientChunkCache;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -22,13 +21,13 @@ import java.util.function.Consumer;
 /**
  * Mixin for {@link Tunnelers}.
  *
- * <p>Hooks into {@link ClientChunkManager#loadChunkFromPacket} so that the
+ * <p>Hooks into {@link ClientChunkCache#replaceWithPacketData} so that the
  * Tunnelers module is notified the moment a chunk arrives from the server,
  * rather than discovering it during the next periodic scan tick.  This removes
  * the scan-delay lag and prevents chunks that unload before the timer fires
  * from being silently missed.</p>
  *
- * <p>A symmetric inject into {@link ClientChunkManager#unload} removes stale
+ * <p>A symmetric inject into {@link ClientChunkCache#drop} removes stale
  * entries from the locations map as soon as a chunk leaves the view distance,
  * keeping memory usage tight even with a large scan range.</p>
  *
@@ -40,7 +39,7 @@ import java.util.function.Consumer;
  * ]
  * }</pre>
  */
-@Mixin(ClientChunkManager.class)
+@Mixin(value = ClientChunkCache.class, remap = false)
 public abstract class TunnelersMixin {
 
     // ------------------------------------------------------------------ //
@@ -50,7 +49,7 @@ public abstract class TunnelersMixin {
     /**
      * Called by the game when a chunk packet is received from the server and
      * the chunk has been fully populated into the client world.  The return
-     * value is the finished {@link WorldChunk}; we read it from the
+     * value is the finished {@link LevelChunk}; we read it from the
      * {@link CallbackInfoReturnable} so we never touch a partially-built chunk.
      *
      * <p>If Tunnelers is active we hand the chunk straight to
@@ -59,18 +58,18 @@ public abstract class TunnelersMixin {
      * only for this one chunk.</p>
      */
     @Inject(
-        method = "loadChunkFromPacket",
+        method = "replaceWithPacketData",
         at = @At("RETURN")
     )
     private void tunnelers$onChunkLoaded(
             int x,
             int z,
-            PacketByteBuf buf,
-            NbtCompound nbt,
-            Consumer<ChunkData.BlockEntityVisitor> chunkDataConsumer,
-            CallbackInfoReturnable<WorldChunk> cir
+            FriendlyByteBuf buf,
+            java.util.Map<net.minecraft.world.level.levelgen.Heightmap.Types, long[]> heightmaps,
+            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> chunkDataConsumer,
+            CallbackInfoReturnable<LevelChunk> cir
     ) {
-        WorldChunk chunk = cir.getReturnValue();
+        LevelChunk chunk = cir.getReturnValue();
         if (chunk == null) return;
         ChunkPos pos = chunk.getPos();
 
@@ -89,12 +88,12 @@ public abstract class TunnelersMixin {
      * Called by the game when a chunk is removed from the client world (e.g.
      * the player moves out of range or the server sends an unload packet).
      *
-     * <p>We notify Tunnelers so it can evict every {@link net.minecraft.util.math.BlockPos}
+     * <p>We notify Tunnelers so it can evict every {@link net.minecraft.core.BlockPos}
      * that belonged to this chunk from its {@code locations} map, preventing
      * memory from growing unboundedly on long sessions.</p>
      */
     @Inject(
-        method = "unload",
+        method = "drop",
         at = @At("HEAD")
     )
     private void tunnelers$onChunkUnloaded(ChunkPos pos, CallbackInfo ci) {

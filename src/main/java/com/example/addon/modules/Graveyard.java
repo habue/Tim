@@ -21,15 +21,15 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.ExperienceOrbEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public class Graveyard extends Module {
     private final SettingGroup sgGeneral     = settings.getDefaultGroup();
@@ -161,7 +161,7 @@ public class Graveyard extends Module {
     // ── State ─────────────────────────────────────────────────────────────────
 
     private final List<ItemEntity> itemsToRender            = new ArrayList<>();
-    private final List<ExperienceOrbEntity> xpOrbsToRender  = new ArrayList<>();
+    private final List<ExperienceOrb> xpOrbsToRender  = new ArrayList<>();
     private final Set<Integer>     notifiedItemEntities     = new HashSet<>();
     private long lastXpNotifyTime = 0;
     private static final long XP_NOTIFY_COOLDOWN_MS = 3000;
@@ -182,19 +182,19 @@ public class Graveyard extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
-        notifiedItemEntities.removeIf(id -> mc.world.getEntityById(id) == null);
+        notifiedItemEntities.removeIf(id -> mc.level.getEntity(id) == null);
         itemsToRender.clear();
         xpOrbsToRender.clear();
 
-        Box searchArea = new Box(mc.player.getBlockPos()).expand(range.get());
+        AABB searchArea = new AABB(mc.player.blockPosition()).inflate(range.get());
 
-        List<ItemEntity> matching = mc.world.getEntitiesByClass(
+        List<ItemEntity> matching = mc.level.getEntitiesOfClass(
             ItemEntity.class,
             searchArea,
             e -> {
-                ItemStack stack = e.getStack();
+                ItemStack stack = e.getItem();
                 if (!whitelistedItems.get().contains(stack.getItem())) return false;
                 if (enchantedOnly.get() && canBeEnchanted(stack) && !isEnchanted(stack)) return false;
                 return true;
@@ -202,7 +202,7 @@ public class Graveyard extends Module {
         );
 
         if (sortByDistance.get()) {
-            matching.sort(Comparator.comparingDouble(e -> mc.player.squaredDistanceTo(e)));
+            matching.sort(Comparator.comparingDouble(e -> mc.player.distanceToSqr(e)));
         }
 
         if (!matching.isEmpty()) {
@@ -217,8 +217,8 @@ public class Graveyard extends Module {
         }
 
         if (detectXpOrbs.get()) {
-            List<ExperienceOrbEntity> xpOrbs = mc.world.getEntitiesByClass(
-                ExperienceOrbEntity.class,
+            List<ExperienceOrb> xpOrbs = mc.level.getEntitiesOfClass(
+                ExperienceOrb.class,
                 searchArea,
                 e -> true
             );
@@ -230,7 +230,7 @@ public class Graveyard extends Module {
                     if (now - lastXpNotifyTime > XP_NOTIFY_COOLDOWN_MS) {
                         lastXpNotifyTime = now;
                         info("Found XP orbs nearby!");
-                        mc.player.playSound(SoundEvents.ENTITY_PLAYER_LEVELUP, 0.8f, 1.5f);
+                        mc.player.playSound(SoundEvents.PLAYER_LEVELUP, 0.8f, 1.5f);
                     }
                 }
             }
@@ -244,26 +244,26 @@ public class Graveyard extends Module {
         if (!showBeam.get() || (itemsToRender.isEmpty() && xpOrbsToRender.isEmpty())) return;
 
         double  halfWidth  = beamWidth.get() / 2.0;
-        double  topOfWorld = mc.world.getHeight();
+        double  topOfWorld = mc.level.getHeight();
         boolean useSplit   = separateEnchantedColor.get() && !enchantedOnly.get();
 
         for (ItemEntity item : itemsToRender) {
-            SettingColor c = (useSplit && isEnchanted(item.getStack()))
+            SettingColor c = (useSplit && isEnchanted(item.getItem()))
                 ? enchantedBeamColor.get()
                 : beamColor.get();
 
-            Vec3d pos  = item.getPos();
-            Box   beam = new Box(
+            Vec3 pos  = item.position();
+            AABB   beam = new AABB(
                 pos.x - halfWidth, pos.y, pos.z - halfWidth,
                 pos.x + halfWidth, topOfWorld, pos.z + halfWidth
             );
             event.renderer.box(beam, c, c, ShapeMode.Both, 0);
         }
 
-        for (ExperienceOrbEntity orb : xpOrbsToRender) {
+        for (ExperienceOrb orb : xpOrbsToRender) {
             SettingColor c = xpBeamColor.get();
-            Vec3d pos  = orb.getPos();
-            Box   beam = new Box(
+            Vec3 pos  = orb.position();
+            AABB   beam = new AABB(
                 pos.x - halfWidth, pos.y, pos.z - halfWidth,
                 pos.x + halfWidth, topOfWorld, pos.z + halfWidth
             );
@@ -274,9 +274,9 @@ public class Graveyard extends Module {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private boolean isEnchanted(ItemStack stack) {
-        var enchants = stack.get(DataComponentTypes.ENCHANTMENTS);
+        var enchants = stack.get(DataComponents.ENCHANTMENTS);
         if (enchants != null && !enchants.isEmpty()) return true;
-        var stored = stack.get(DataComponentTypes.STORED_ENCHANTMENTS);
+        var stored = stack.get(DataComponents.STORED_ENCHANTMENTS);
         return stored != null && !stored.isEmpty();
     }
 
@@ -289,9 +289,9 @@ public class Graveyard extends Module {
         if (!notifiedItemEntities.add(id)) return;
 
         if (notification.get()) {
-            String name = item.getStack().getName().getString();
+            String name = item.getItem().getHoverName().getString();
             info("Found: %s", name);
-            mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 0.9f, 1.0f);
+            mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 0.9f, 1.0f);
         }
     }
 }

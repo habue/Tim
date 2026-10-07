@@ -26,7 +26,7 @@
   "depends": {
     "java": ">=25",
     "minecraft": "26.1.2",
-    "meteor-client": "26.1.2-SNAPSHOT",
+    "meteor-client": ">=26.1.2-0",
     "fabricloader": ">=0.19.2"
   },
   "suggests": {

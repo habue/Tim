@@ -13,7 +13,7 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.option.Perspective;
+import net.minecraft.client.CameraType;
 
 public class ThirdSight extends Module {
 
@@ -179,7 +179,7 @@ public class ThirdSight extends Module {
     private double lastKnownSliderDistance   = 4.0;
     private boolean wasScrollKeyPressed     = false;
 
-    private Perspective previousPerspective = null;
+    private CameraType previousPerspective = null;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -194,16 +194,16 @@ public class ThirdSight extends Module {
     public void onActivate() {
         if (mc.player == null || mc.options == null) return;
 
-        cameraYaw   = mc.player.getYaw();
-        cameraPitch = Math.max(-89.9f, Math.min(89.9f, mc.player.getPitch()));
+        cameraYaw   = mc.player.getYRot();
+        cameraPitch = Math.max(-89.9f, Math.min(89.9f, mc.player.getXRot()));
 
-        previousPerspective = mc.options.getPerspective();
+        previousPerspective = mc.options.getCameraType();
         
         // Start at current vanilla distance to allow smooth transition in
-        currentDistance = (previousPerspective == Perspective.FIRST_PERSON) ? 0.0 : 4.0;
+        currentDistance = (previousPerspective == CameraType.FIRST_PERSON) ? 0.0 : 4.0;
 
-        if (previousPerspective == Perspective.FIRST_PERSON)
-            mc.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+        if (previousPerspective == CameraType.FIRST_PERSON)
+            mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
 
         isZooming               = false;
         wasZoomKeyPressed       = false;
@@ -222,9 +222,9 @@ public class ThirdSight extends Module {
     public void onDeactivate() {
         if (mc.options != null) {
             if (previousPerspective != null)
-                mc.options.setPerspective(previousPerspective);
+                mc.options.setCameraType(previousPerspective);
             if (originalFov != -1)
-                mc.options.getFov().setValue((int) originalFov);
+                mc.options.fov().set((int) originalFov);
         }
 
         previousPerspective = null;
@@ -237,7 +237,7 @@ public class ThirdSight extends Module {
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.options == null) return;
 
-        if (mc.currentScreen == null) {
+        if (mc.screen == null) {
             // No Distance toggle
             boolean noDistPressed = noDistanceKey.get().isPressed();
             if (noDistPressed && !wasNoDistanceKeyPressed) {
@@ -281,14 +281,14 @@ public class ThirdSight extends Module {
         // ── Normal camera tick ────────────────────────────────────────────────
         if (noDistanceActive) {
             if (previousPerspective != null) {
-                mc.options.setPerspective(previousPerspective);
+                mc.options.setCameraType(previousPerspective);
                 previousPerspective = null;
             }
         } else {
             if (previousPerspective == null)
-                previousPerspective = mc.options.getPerspective();
-            if (mc.options.getPerspective() != Perspective.THIRD_PERSON_BACK)
-                mc.options.setPerspective(Perspective.THIRD_PERSON_BACK);
+                previousPerspective = mc.options.getCameraType();
+            if (mc.options.getCameraType() != CameraType.THIRD_PERSON_BACK)
+                mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
         }
     }
 
@@ -298,10 +298,10 @@ public class ThirdSight extends Module {
     private void onMouseScroll(MouseScrollEvent event) {
         if (!scrollWheelAdjust.get()) return;
         if (mc.player == null || mc.options == null) return;
-        if (mc.currentScreen != null) return;                // don't hijack GUI scrolls
+        if (mc.screen != null) return;                // don't hijack GUI scrolls
         if (noDistanceActive) return;                         // vanilla distance in effect
         if (isZooming) return;                                // zoom key has its own distance
-        if (mc.options.getPerspective() != Perspective.THIRD_PERSON_BACK) return;
+        if (mc.options.getCameraType() != CameraType.THIRD_PERSON_BACK) return;
 
         // Cancel the vanilla hotbar scroll so the wheel only controls the camera
         // We cancel before clamping so hitting the distance limit doesn't scroll hotbar
@@ -336,7 +336,7 @@ public class ThirdSight extends Module {
         // When free-look is off, smoothly chase the player's look direction.
         boolean shouldFollow = !freeLook.get() && mc.player != null;
         if (shouldFollow) {
-            float playerYaw = mc.player.getYaw();
+            float playerYaw = mc.player.getYRot();
             float yawDiff = playerYaw - cameraYaw;
             if (yawDiff >  180f) yawDiff -= 360f;
             if (yawDiff < -180f) yawDiff += 360f;
@@ -351,7 +351,7 @@ public class ThirdSight extends Module {
         double targetFovValue = originalFov;
 
         // Only apply custom/zoom FOV when in First Person
-        if (mc.options.getPerspective().isFirstPerson() && customFov.get()) {
+        if (mc.options.getCameraType().isFirstPerson() && customFov.get()) {
             if (isZooming) {
                 targetFovValue = zoomFov.get();
             } else {
@@ -361,20 +361,20 @@ public class ThirdSight extends Module {
 
         if (targetFovValue != originalFov) {
             if (originalFov == -1) {
-                originalFov = mc.options.getFov().getValue();
+                originalFov = mc.options.fov().get();
                 currentFov = originalFov;
             }
             currentFov += (targetFovValue - currentFov) * speed;
             if (Math.abs(targetFovValue - currentFov) < 0.1) currentFov = targetFovValue;
-            mc.options.getFov().setValue((int) currentFov);
+            mc.options.fov().set((int) currentFov);
         } else if (originalFov != -1) {
             currentFov += (originalFov - currentFov) * speed;
             if (Math.abs(originalFov - currentFov) < 0.1) {
                 currentFov = originalFov;
-                mc.options.getFov().setValue((int) originalFov);
+                mc.options.fov().set((int) originalFov);
                 originalFov = -1;
             } else {
-                mc.options.getFov().setValue((int) currentFov);
+                mc.options.fov().set((int) currentFov);
             }
         }
     }
@@ -415,7 +415,7 @@ public class ThirdSight extends Module {
      */
     public boolean isFreeLookActive() {
         if (!isActive()) return false;
-        if (mc.options.getPerspective().isFirstPerson()) return false;
+        if (mc.options.getCameraType().isFirstPerson()) return false;
         if (noDistanceActive && !isZooming()) return false;
         return freeLook.get();
     }

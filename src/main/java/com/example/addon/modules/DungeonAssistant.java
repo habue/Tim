@@ -12,7 +12,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.example.addon.Tim;
 import com.example.addon.utils.GlowingRegistry;
 import com.mojang.blaze3d.systems.RenderSystem;
-
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -32,50 +36,41 @@ import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.AbstractRailBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.MobSpawnerBlockEntity;
-import net.minecraft.client.gl.ShaderProgramKeys;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.ExperienceOrbEntity;
-import net.minecraft.entity.mob.EndermiteEntity;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.vehicle.ChestMinecartEntity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.fluid.Fluids;
-import net.minecraft.item.AxeItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.item.PickaxeItem;
-import net.minecraft.item.SwordItem;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Direction.Axis;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import com.mojang.math.Axis;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Endermite;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.vehicle.minecart.MinecartChest;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.BaseRailBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class DungeonAssistant extends Module {
 
@@ -131,9 +126,9 @@ public class DungeonAssistant extends Module {
     private final Map<BlockPos, TargetType>  targets               = new ConcurrentHashMap<>();
     private final Set<ChunkPos>              scannedChunks         = new HashSet<>();
     private final Set<BlockPos>              checkedContainers     = new HashSet<>();
-    private final List<EndermiteEntity>      endermiteTargets      = new ArrayList<>();
-    private final List<ExperienceOrbEntity>  xpOrbTargets          = new ArrayList<>();
-    private final List<MobEntity>            spawnerMobTargets     = new ArrayList<>();
+    private final List<Endermite>      endermiteTargets      = new ArrayList<>();
+    private final List<ExperienceOrb>  xpOrbTargets          = new ArrayList<>();
+    private final List<Mob>            spawnerMobTargets     = new ArrayList<>();
     private final Set<Integer>               notifiedEndermites    = new HashSet<>();
     private final Set<Integer>               notifiedSpawnerMobs   = new HashSet<>();
     private final Set<Integer>               spawnerMobGlowingIds  = new HashSet<>();
@@ -463,7 +458,7 @@ public class DungeonAssistant extends Module {
         .name("toggle-key").description("Key to toggle custom block scanning on/off.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null) return;
+            if (mc.screen != null) return;
             boolean newValue = !scanCustomBlocks.get();
             scanCustomBlocks.set(newValue);
             if (mc.player != null) info("Custom Blocks Highlight toggled %s.", newValue ? "§aON" : "§cOFF");
@@ -735,10 +730,10 @@ public class DungeonAssistant extends Module {
         hasPlayedSoundForCurrentScreen = false;
         GlowingRegistry.clear();
 
-        if (mc.player != null && mc.world != null) {
+        if (mc.player != null && mc.level != null) {
             info("§6Dungeon Assistant activated");
-            if (mc.world.getRegistryKey() != null) {
-                lastDimension = mc.world.getRegistryKey().getValue().toString();
+            if (mc.level.dimension() != null) {
+                lastDimension = mc.level.dimension().identifier().toString();
             }
         }
         
@@ -747,8 +742,8 @@ public class DungeonAssistant extends Module {
 
     @Override
     public void onDeactivate() {
-        if (isBreaking && mc.interactionManager != null) {
-            mc.interactionManager.cancelBlockBreaking();
+        if (isBreaking && mc.gameMode != null) {
+            mc.gameMode.stopDestroyBlock();
         }
         restoreSlot();
         GlowingRegistry.clear();
@@ -777,12 +772,12 @@ public class DungeonAssistant extends Module {
 
     @EventHandler
     private void onOpenScreen(OpenScreenEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (wasAutoOpened) {
             interactTimeoutTimer = 0;
             if (autoOpen.get() && silentMode.get()
-                    && event.screen instanceof HandledScreen<?>
+                    && event.screen instanceof AbstractContainerScreen<?>
                     && !(event.screen instanceof InventoryScreen)) {
                 silentOpenPending = true;
                 silentSlotReadRetryTimer = 0;
@@ -790,14 +785,14 @@ public class DungeonAssistant extends Module {
             return;
         }
 
-        HitResult hit = mc.crosshairTarget;
+        HitResult hit = mc.hitResult;
         if (hit != null) {
             if (hit.getType() == HitResult.Type.BLOCK) {
                 lastOpenedContainer = ((BlockHitResult) hit).getBlockPos();
                 lastOpenedEntity = null;
             } else if (hit.getType() == HitResult.Type.ENTITY) {
                 EntityHitResult entityHit = (EntityHitResult) hit;
-                if (entityHit.getEntity() instanceof ChestMinecartEntity) {
+                if (entityHit.getEntity() instanceof MinecartChest) {
                     lastOpenedEntity    = entityHit.getEntity();
                     lastOpenedContainer = null;
                 }
@@ -807,7 +802,7 @@ public class DungeonAssistant extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         if (performSafetyChecks()) return;
         updateBreakingLogic();
         updateContainerLogic();
@@ -816,7 +811,7 @@ public class DungeonAssistant extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         boolean isPulse    = renderMode.get() == RenderMode.PULSE;
@@ -827,16 +822,16 @@ public class DungeonAssistant extends Module {
             BlockPos   pos  = entry.getKey();
             TargetType type = entry.getValue();
 
-            Box renderBox;
+            AABB renderBox;
             SettingColor color;
 
             if (type == TargetType.CHEST_MINECART || type == TargetType.MISROTATED_CHEST_MINECART || type == TargetType.DISPLACED_CHEST_MINECART) {
-                Box queryBox = new Box(pos).expand(0.5);
-                List<ChestMinecartEntity> minecarts = mc.world.getEntitiesByClass(
-                    ChestMinecartEntity.class, queryBox, entity -> true);
+                AABB queryBox = new AABB(pos).inflate(0.5);
+                List<MinecartChest> minecarts = mc.level.getEntitiesOfClass(
+                    MinecartChest.class, queryBox, entity -> true);
                 if (minecarts.isEmpty()) { toRemove.add(pos); continue; }
 
-                ChestMinecartEntity cart = minecarts.get(0);
+                MinecartChest cart = minecarts.get(0);
                 renderBox = getMinecartChestBox(cart);
                 color = getColor(type);
 
@@ -845,10 +840,10 @@ public class DungeonAssistant extends Module {
                 }
 
             } else {
-                if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-                if (mc.world.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
+                if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+                if (mc.level.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
 
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
                 if (type == TargetType.SPAWNER || type == TargetType.CHEST || type == TargetType.MISROTATED_DEEPSLATE || type == TargetType.LOW_Y_STONE_DIRT) {
                     if (!validateBlockType(currentBlock, type)) { toRemove.add(pos); continue; }
                 }
@@ -882,8 +877,8 @@ public class DungeonAssistant extends Module {
         if (!spawnerTorches.isEmpty() && trackSpawners.get() && highlightSpawnerTorches.get()) {
             SettingColor torchColor = spawnerTorchColor.get();
             for (BlockPos pos : spawnerTorches) {
-                if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-                Box torchBox = createPaddedBox(pos);
+                if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+                AABB torchBox = createPaddedBox(pos);
                 
                 if (isSpectral) {
                     event.renderer.box(torchBox, withAlpha(torchColor, spectralBlockFillAlpha.get()), withAlpha(torchColor, 0), ShapeMode.Sides, 0);
@@ -898,10 +893,10 @@ public class DungeonAssistant extends Module {
 
         if (trackEndermites.get() && !endermiteTargets.isEmpty()) {
             SettingColor color = endermiteColor.get();
-            for (EndermiteEntity endermite : endermiteTargets) {
+            for (Endermite endermite : endermiteTargets) {
                 if (!endermite.isAlive()) continue;
 
-                Box entityBox = endermite.getBoundingBox();
+                AABB entityBox = endermite.getBoundingBox();
                 beamsToRender.add(new BeamData(entityBox, color));
 
                 if (isSpectral) {
@@ -917,9 +912,9 @@ public class DungeonAssistant extends Module {
 
         if (trackXpOrbs.get() && !xpOrbTargets.isEmpty()) {
             SettingColor color = xpOrbColor.get();
-            for (ExperienceOrbEntity orb : xpOrbTargets) {
+            for (ExperienceOrb orb : xpOrbTargets) {
                 if (!orb.isAlive()) continue;
-                Box orbBox = orb.getBoundingBox();
+                AABB orbBox = orb.getBoundingBox();
 
                 if (isSpectral) {
                     event.renderer.box(orbBox, withAlpha(color, 0), withAlpha(color, 200), ShapeMode.Lines, 0);
@@ -934,9 +929,9 @@ public class DungeonAssistant extends Module {
 
         if (trackSpawnerMobs.get() && !spawnerMobTargets.isEmpty()) {
             SettingColor color = spawnerMobColor.get();
-            for (MobEntity mob : spawnerMobTargets) {
+            for (Mob mob : spawnerMobTargets) {
                 if (!mob.isAlive()) continue;
-                Box entityBox = mob.getBoundingBox();
+                AABB entityBox = mob.getBoundingBox();
 
                 if (isSpectral) {
                     event.renderer.box(entityBox, withAlpha(color, 0), withAlpha(color, 200), ShapeMode.Lines, 0);
@@ -958,11 +953,11 @@ public class DungeonAssistant extends Module {
             List<BlockPos> chests = targets.entrySet().stream()
                 .filter(e -> e.getValue() == TargetType.CHEST)
                 .map(Map.Entry::getKey)
-                .filter(pos -> pos.getSquaredDistance(mc.player.getPos()) <= maxDistSq)
+                .filter(pos -> pos.distToCenterSqr(mc.player.position()) <= maxDistSq)
                 .filter(pos -> pos.getY() >= minY)
-                .filter(pos -> mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4))
-                .filter(pos -> !mc.world.getBlockState(pos).isAir())
-                .sorted(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getPos())))
+                .filter(pos -> mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4))
+                .filter(pos -> !mc.level.getBlockState(pos).isAir())
+                .sorted(Comparator.comparingDouble(pos -> pos.distToCenterSqr(mc.player.position())))
                 .toList();
 
             if (!chests.isEmpty()) {
@@ -982,9 +977,9 @@ public class DungeonAssistant extends Module {
             double maxDistSq = Math.pow(range.get() * 16, 2);
             
             for (BlockPos pos : activeSpawners) {
-                if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-                if (pos.getSquaredDistance(mc.player.getPos()) > maxDistSq) continue;
-                if (mc.world.getBlockState(pos).isAir()) continue;
+                if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+                if (pos.distToCenterSqr(mc.player.position()) > maxDistSq) continue;
+                if (mc.level.getBlockState(pos).isAir()) continue;
                 
                 beamsToRender.add(new BeamData(createPaddedBox(pos), activeBeamColor));
             }
@@ -1021,33 +1016,33 @@ public class DungeonAssistant extends Module {
         }
     }
 
-    private void renderBoxBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
+    private void renderBoxBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
         double beamSize = beamWidth.get() / 100.0;
         double centerX  = (anchorBox.minX + anchorBox.maxX) / 2.0;
         double centerZ  = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int    worldBot = mc.world.getBottomY();
-        int    worldTop = worldBot + mc.world.getHeight();
-        Box beamBox = new Box(
+        int    worldBot = mc.level.getMinY();
+        int    worldTop = worldBot + mc.level.getHeight();
+        AABB beamBox = new AABB(
             centerX - beamSize, worldBot, centerZ - beamSize,
             centerX + beamSize, worldTop, centerZ + beamSize);
         event.renderer.box(beamBox, withAlpha(color, 80), color, ShapeMode.Both, 0);
         for (int i = 1; i <= 2; i++) {
             double exp   = beamSize * i * 1.5;
             int    alpha = Math.max(4, 30 / i);
-            Box bloom = new Box(
+            AABB bloom = new AABB(
                 centerX - beamSize - exp, worldBot, centerZ - beamSize - exp,
                 centerX + beamSize + exp, worldTop, centerZ + beamSize + exp);
             event.renderer.box(bloom, withAlpha(color, alpha), withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
 
-    private void renderGuardianBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
-        if (mc.world == null) return;
+    private void renderGuardianBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
+        if (mc.level == null) return;
 
         double cx = (anchorBox.minX + anchorBox.maxX) / 2.0;
         double cz = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int worldBot = mc.world.getBottomY();
-        int worldTop = worldBot + mc.world.getHeight();
+        int worldBot = mc.level.getMinY();
+        int worldTop = worldBot + mc.level.getHeight();
 
         double radius  = guardianBeamRadius.get();
         int    strands = guardianStrands.get();
@@ -1056,7 +1051,7 @@ public class DungeonAssistant extends Module {
         double rotationRad = (System.currentTimeMillis() % (long)(6000.0 / speed))
                              / (6000.0 / speed) * Math.PI * 2.0;
 
-        Vec3d camPos = mc.gameRenderer.getCamera().getPos();
+        Vec3 camPos = mc.gameRenderer.getMainCamera().position();
         double camX  = camPos.x, camY = camPos.y, camZ = camPos.z;
 
         float r       = color.r / 255f;
@@ -1064,58 +1059,35 @@ public class DungeonAssistant extends Module {
         float b       = color.b / 255f;
         float strandA = guardianStrandAlpha.get() / 255f;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableCull();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
-        MatrixStack matrices = new MatrixStack();
-        matrices.push();
 
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buf = tessellator.begin(
-            VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
-
-        org.joml.Matrix4f matrix = matrices.peek().getPositionMatrix();
-
-        double relCx  = cx      - camX;
-        double relCz  = cz      - camZ;
-        double relBot = worldBot - camY;
-        double relTop = worldTop - camY;
 
         for (int i = 0; i < strands; i++) {
             double angle = rotationRad + (Math.PI * 2.0 / strands) * i;
             double cos   = Math.cos(angle);
             double sin   = Math.sin(angle);
 
-            double lx = relCx + cos * radius, lz = relCz + sin * radius;
-            double rx = relCx - cos * radius, rz = relCz - sin * radius;
+            double lx = cx + cos * radius, lz = cz + sin * radius;
+            double rx = cx - cos * radius, rz = cz - sin * radius;
 
-            float lxf = (float) lx, lzf = (float) lz;
-            float rxf = (float) rx, rzf = (float) rz;
-            float botF = (float) relBot, topF = (float) relTop;
 
-            buf.vertex(matrix, lxf, botF, lzf).color(r, g, b, strandA);
-            buf.vertex(matrix, rxf, botF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, lxf, topF, lzf).color(r, g, b, strandA);
 
-            buf.vertex(matrix, rxf, botF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, rxf, topF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, lxf, topF, lzf).color(r, g, b, strandA);
+
+            event.renderer.quad(lx, worldBot, lz, rx, worldBot, rz,
+                rx, worldTop, rz, lx, worldTop, lz,
+                withAlpha(color, Math.round(strandA * 255)));
+
         }
 
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        matrices.pop();
 
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
+
+
+
 
         int coreAlpha = guardianCoreAlpha.get();
         if (coreAlpha > 0) {
             double coreR = radius * 0.25;
-            Box coreBox = new Box(
+            AABB coreBox = new AABB(
                 cx - coreR, worldBot, cz - coreR,
                 cx + coreR, worldTop, cz + coreR);
             event.renderer.box(coreBox,
@@ -1129,7 +1101,7 @@ public class DungeonAssistant extends Module {
             for (int ring = 1; ring <= 2; ring++) {
                 double expansion = glowR * ring;
                 int    alpha     = Math.max(4, 22 / ring);
-                Box bloomBox = new Box(
+                AABB bloomBox = new AABB(
                     cx - radius - expansion, worldBot, cz - radius - expansion,
                     cx + radius + expansion, worldTop, cz + radius + expansion);
                 event.renderer.box(bloomBox,
@@ -1149,11 +1121,11 @@ public class DungeonAssistant extends Module {
         spawnerMobGlowingIds.clear();
         if (renderMode.get() != RenderMode.SPECTRAL) return;
 
-        if (mc.world != null && mc.player != null && (trackChestMinecarts.get() || trackAnomalousMinecarts.get())) {
+        if (mc.level != null && mc.player != null && (trackChestMinecarts.get() || trackAnomalousMinecarts.get())) {
             int  blockRange  = range.get() * 16;
-            int  worldHeight = mc.world.getHeight();
-            Box  searchBox   = new Box(mc.player.getBlockPos()).expand(blockRange, worldHeight, blockRange);
-            for (ChestMinecartEntity minecart : mc.world.getEntitiesByClass(ChestMinecartEntity.class, searchBox, e -> true)) {
+            int  worldHeight = mc.level.getHeight();
+            AABB  searchBox   = new AABB(mc.player.blockPosition()).inflate(blockRange, worldHeight, blockRange);
+            for (MinecartChest minecart : mc.level.getEntitiesOfClass(MinecartChest.class, searchBox, e -> true)) {
                 TargetType type = getMinecartType(minecart);
                 if (type == TargetType.DISPLACED_CHEST_MINECART && trackAnomalousMinecarts.get()) {
                     GlowingRegistry.add(minecart.getId(), toArgb(displacedMinecartColor.get()));
@@ -1166,19 +1138,19 @@ public class DungeonAssistant extends Module {
         }
 
         if (trackEndermites.get()) {
-            for (EndermiteEntity e : endermiteTargets) {
+            for (Endermite e : endermiteTargets) {
                 if (e.isAlive()) GlowingRegistry.add(e.getId(), toArgb(endermiteColor.get()));
             }
         }
 
         if (trackXpOrbs.get()) {
-            for (ExperienceOrbEntity orb : xpOrbTargets) {
+            for (ExperienceOrb orb : xpOrbTargets) {
                 if (orb.isAlive()) GlowingRegistry.add(orb.getId(), toArgb(xpOrbColor.get()));
             }
         }
 
         if (trackSpawnerMobs.get()) {
-            for (MobEntity mob : spawnerMobTargets) {
+            for (Mob mob : spawnerMobTargets) {
                 if (mob.isAlive()) {
                     GlowingRegistry.add(mob.getId(), toArgb(spawnerMobColor.get()));
                     spawnerMobGlowingIds.add(mob.getId());
@@ -1191,7 +1163,7 @@ public class DungeonAssistant extends Module {
     // Bloom & Pulse Rendering
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int    layers    = glowLayers.get();
         double spread    = glowSpread.get();
         int    baseAlpha = glowBaseAlpha.get();
@@ -1200,7 +1172,7 @@ public class DungeonAssistant extends Module {
             double expansion  = spread * i;
             int    layerAlpha = Math.max(4, (int) (baseAlpha * (1.0 - (double)(i - 1) / layers)));
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -1226,7 +1198,7 @@ public class DungeonAssistant extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -1235,7 +1207,7 @@ public class DungeonAssistant extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -1247,8 +1219,8 @@ public class DungeonAssistant extends Module {
 
     private boolean performSafetyChecks() {
         if (!autoDisableOnLowHealth.get()) return false;
-        boolean hasTotem = mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)
-            || mc.player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING);
+        boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
+            || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
         if (hasTotem && mc.player.getHealth() <= lowHealthThreshold.get() * 2) {
             error("Health is critical (%.1f), disabling to prevent totem pop.", mc.player.getHealth());
             toggle();
@@ -1266,18 +1238,18 @@ public class DungeonAssistant extends Module {
             breakDelayTimer--;
             if (breakDelayTimer == 0) {
                 if (blockToBreak != null) {
-                    Block targetBlock = mc.world.getBlockState(blockToBreak).getBlock();
+                    Block targetBlock = mc.level.getBlockState(blockToBreak).getBlock();
                     if (targetBlock == Blocks.CHEST || targetBlock == Blocks.TRAPPED_CHEST || targetBlock == Blocks.SPAWNER) {
                         isBreaking = true;
                         isBreakingChest = (targetBlock == Blocks.CHEST || targetBlock == Blocks.TRAPPED_CHEST);
-                        if (silentMode.get()) previousSlot = mc.player.getInventory().selectedSlot;
+                        if (silentMode.get()) previousSlot = mc.player.getInventory().getSelectedSlot();
                     } else {
                         blockToBreak = null;
                     }
                 } else if (entityToBreak != null) {
-                    if (entityToBreak instanceof ChestMinecartEntity) {
+                    if (entityToBreak instanceof MinecartChest) {
                         isBreakingEntity = true;
-                        if (silentMode.get()) previousSlot = mc.player.getInventory().selectedSlot;
+                        if (silentMode.get()) previousSlot = mc.player.getInventory().getSelectedSlot();
                     } else {
                         entityToBreak = null;
                     }
@@ -1285,14 +1257,14 @@ public class DungeonAssistant extends Module {
             }
         }
 
-        if (isBreaking && blockToBreak != null && !mc.player.isTouchingWater()) {
-            Block currentBreakTarget = mc.world.getBlockState(blockToBreak).getBlock();
+        if (isBreaking && blockToBreak != null && !mc.player.isInWater()) {
+            Block currentBreakTarget = mc.level.getBlockState(blockToBreak).getBlock();
 
-            boolean blockIsNowAir = mc.world.getBlockState(blockToBreak).isAir();
+            boolean blockIsNowAir = mc.level.getBlockState(blockToBreak).isAir();
             boolean done = blockIsNowAir
                 || (currentBreakTarget != Blocks.CHEST && currentBreakTarget != Blocks.TRAPPED_CHEST
                         && currentBreakTarget != Blocks.SPAWNER)
-                || Math.sqrt(mc.player.squaredDistanceTo(blockToBreak.toCenterPos())) > 6;
+                || Math.sqrt(mc.player.distanceToSqr(blockToBreak.getCenter())) > 6;
 
             if (done) {
                 if (isBreakingChest && blockIsNowAir && trackChests.get()) {
@@ -1302,25 +1274,25 @@ public class DungeonAssistant extends Module {
                 isBreaking = false;
                 blockToBreak = null;
                 isBreakingChest = false;
-                mc.interactionManager.cancelBlockBreaking();
+                mc.gameMode.stopDestroyBlock();
                 restoreSlot();
             } else {
                 if (isBreakingChest) {
                     int axeSlot = findAxe();
-                    if (axeSlot != -1) mc.player.getInventory().selectedSlot = axeSlot;
+                    if (axeSlot != -1) mc.player.getInventory().setSelectedSlot(axeSlot);
                 } else {
                     int pickaxeSlot = findPickaxe();
-                    if (pickaxeSlot != -1) mc.player.getInventory().selectedSlot = pickaxeSlot;
+                    if (pickaxeSlot != -1) mc.player.getInventory().setSelectedSlot(pickaxeSlot);
                 }
                 Rotations.rotate(Rotations.getYaw(blockToBreak), Rotations.getPitch(blockToBreak), () -> {
-                    mc.interactionManager.updateBlockBreakingProgress(blockToBreak, Direction.UP);
-                    mc.player.swingHand(Hand.MAIN_HAND);
+                    mc.gameMode.continueDestroyBlock(blockToBreak, Direction.UP);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
                 });
             }
         }
 
-        if (isBreakingEntity && entityToBreak != null && !mc.player.isTouchingWater()) {
-            boolean gone = !(entityToBreak instanceof ChestMinecartEntity)
+        if (isBreakingEntity && entityToBreak != null && !mc.player.isInWater()) {
+            boolean gone = !(entityToBreak instanceof MinecartChest)
                 || !entityToBreak.isAlive()
                 || mc.player.distanceTo(entityToBreak) > 6;
 
@@ -1330,11 +1302,11 @@ public class DungeonAssistant extends Module {
                 restoreSlot();
             } else {
                 int swordSlot = findSword();
-                if (swordSlot != -1) mc.player.getInventory().selectedSlot = swordSlot;
-                if (mc.player.getAttackCooldownProgress(0f) >= 1.0f) {
+                if (swordSlot != -1) mc.player.getInventory().setSelectedSlot(swordSlot);
+                if (mc.player.getAttackStrengthScale(0f) >= 1.0f) {
                     Rotations.rotate(Rotations.getYaw(entityToBreak), Rotations.getPitch(entityToBreak), () -> {
-                        mc.interactionManager.attackEntity(mc.player, entityToBreak);
-                        mc.player.swingHand(Hand.MAIN_HAND);
+                        mc.gameMode.attack(mc.player, entityToBreak);
+                        mc.player.swing(InteractionHand.MAIN_HAND);
                     });
                 }
             }
@@ -1348,24 +1320,24 @@ public class DungeonAssistant extends Module {
     private void updateContainerLogic() {
         if (interactTimeoutTimer > 0) {
             interactTimeoutTimer--;
-            if (interactTimeoutTimer == 0 && wasAutoOpened && mc.currentScreen == null) {
+            if (interactTimeoutTimer == 0 && wasAutoOpened && mc.screen == null) {
                 if (lastOpenedContainer != null) checkedContainers.remove(lastOpenedContainer);
                 if (lastOpenedEntity != null)    checkedEntityIds.remove(lastOpenedEntity.getId());
                 resetSoftState();
             }
         }
 
-        if (silentOpenPending && mc.currentScreen instanceof HandledScreen
-                && !(mc.currentScreen instanceof InventoryScreen)) {
+        if (silentOpenPending && mc.screen instanceof AbstractContainerScreen
+                && !(mc.screen instanceof InventoryScreen)) {
 
-            HandledScreen<?> silentScreen = (HandledScreen<?>) mc.currentScreen;
-            int numSlots       = silentScreen.getScreenHandler().slots.size();
+            AbstractContainerScreen<?> silentScreen = (AbstractContainerScreen<?>) mc.screen;
+            int numSlots       = silentScreen.getMenu().slots.size();
             int containerSlots = Math.max(0, numSlots - 36);
 
             if (containerSlots > 0) {
                 boolean anyNonEmpty = false;
                 for (int i = 0; i < containerSlots; i++) {
-                    if (!silentScreen.getScreenHandler().slots.get(i).getStack().isEmpty()) {
+                    if (!silentScreen.getMenu().slots.get(i).getItem().isEmpty()) {
                         anyNonEmpty = true;
                         break;
                     }
@@ -1375,11 +1347,11 @@ public class DungeonAssistant extends Module {
                 if (anyNonEmpty || retriesExhausted) {
                     silentFoundWhitelisted = false;
                     for (int i = 0; i < containerSlots; i++) {
-                        Item item = silentScreen.getScreenHandler().slots.get(i).getStack().getItem();
+                        Item item = silentScreen.getMenu().slots.get(i).getItem().getItem();
                         if (whitelistedItems.get().contains(item)) { silentFoundWhitelisted = true; break; }
                     }
                     pendingBreakCheck = true;
-                    mc.player.closeHandledScreen();
+                    mc.player.closeContainer();
                     silentOpenPending = false;
                     silentSlotReadRetryTimer = 0;
                     return;
@@ -1390,7 +1362,7 @@ public class DungeonAssistant extends Module {
             }
         }
 
-        if (pendingBreakCheck && mc.currentScreen == null && !silentOpenPending) {
+        if (pendingBreakCheck && mc.screen == null && !silentOpenPending) {
             pendingBreakCheck = false;
             wasAutoOpened = false;
             hasPlayedSoundForCurrentScreen = false;
@@ -1407,30 +1379,30 @@ public class DungeonAssistant extends Module {
                     }
                 }
             } else {
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
             }
             return;
         }
 
-        if (mc.currentScreen instanceof HandledScreen && !(mc.currentScreen instanceof InventoryScreen)) {
+        if (mc.screen instanceof AbstractContainerScreen && !(mc.screen instanceof InventoryScreen)) {
             if (!wasAutoOpened) return;
             if (lastOpenedContainer == null && lastOpenedEntity == null) return;
-            if (lastOpenedEntity != null && !(lastOpenedEntity instanceof ChestMinecartEntity)) return;
+            if (lastOpenedEntity != null && !(lastOpenedEntity instanceof MinecartChest)) return;
 
-            HandledScreen<?> screen    = (HandledScreen<?>) mc.currentScreen;
-            int numSlots       = screen.getScreenHandler().slots.size();
+            AbstractContainerScreen<?> screen    = (AbstractContainerScreen<?>) mc.screen;
+            int numSlots       = screen.getMenu().slots.size();
             int containerSlots = Math.max(0, numSlots - 36);
 
             if (containerSlots > 0) {
                 boolean found = false;
                 for (int i = 0; i < containerSlots; i++) {
-                    if (whitelistedItems.get().contains(screen.getScreenHandler().slots.get(i).getStack().getItem())) {
+                    if (whitelistedItems.get().contains(screen.getMenu().slots.get(i).getItem().getItem())) {
                         found = true;
                         break;
                     }
                 }
                 if (!found) {
-                    mc.player.closeHandledScreen();
+                    mc.player.closeContainer();
                     wasAutoOpened = false;
                     if (autoBreak.get()) {
                         if (lastOpenedContainer != null) {
@@ -1447,18 +1419,18 @@ public class DungeonAssistant extends Module {
                     if (!hasPlayedSoundForCurrentScreen) {
                         boolean isChestOrMinecart = lastOpenedEntity != null
                             || (lastOpenedContainer != null
-                                && (mc.world.getBlockState(lastOpenedContainer).getBlock() == Blocks.CHEST
-                                ||  mc.world.getBlockState(lastOpenedContainer).getBlock() == Blocks.TRAPPED_CHEST));
+                                && (mc.level.getBlockState(lastOpenedContainer).getBlock() == Blocks.CHEST
+                                ||  mc.level.getBlockState(lastOpenedContainer).getBlock() == Blocks.TRAPPED_CHEST));
                         if (isChestOrMinecart) {
                             lootFoundCount++;
-                            mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                            mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                             hasPlayedSoundForCurrentScreen = true;
                         }
                     }
                 }
             }
 
-        } else if (mc.currentScreen == null && !isBreaking && !isBreakingEntity
+        } else if (mc.screen == null && !isBreaking && !isBreakingEntity
                 && breakDelayTimer == 0 && !pendingBreakCheck
                 && !silentOpenPending && !wasAutoOpened) {
 
@@ -1483,11 +1455,11 @@ public class DungeonAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void updateScanningLogic() {
-        if (mc.world.getRegistryKey() == null) return;
+        if (mc.level.dimension() == null) return;
 
         if (dimensionChangeCooldown > 0) { dimensionChangeCooldown--; return; }
 
-        String currDim = mc.world.getRegistryKey().getValue().toString();
+        String currDim = mc.level.dimension().identifier().toString();
         if (!currDim.equals(lastDimension)) {
             dimensionChangeCooldown = DIMENSION_CHANGE_COOLDOWN_TICKS;
             lastDimension = currDim;
@@ -1495,7 +1467,7 @@ public class DungeonAssistant extends Module {
             return;
         }
 
-        BlockPos playerPos    = mc.player.getBlockPos();
+        BlockPos playerPos    = mc.player.blockPosition();
         int      centerChunkX = playerPos.getX() >> 4;
         int      centerChunkZ = playerPos.getZ() >> 4;
 
@@ -1519,7 +1491,7 @@ public class DungeonAssistant extends Module {
         double rangeSq = Math.pow(spawnerBreakRange.get(), 2);
         for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
             if (entry.getValue() == TargetType.SPAWNER
-                    && entry.getKey().getSquaredDistance(mc.player.getPos()) <= rangeSq) return true;
+                    && entry.getKey().distToCenterSqr(mc.player.position()) <= rangeSq) return true;
         }
         return false;
     }
@@ -1533,7 +1505,7 @@ public class DungeonAssistant extends Module {
 
         for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
             if (entry.getValue() == TargetType.SPAWNER) {
-                double distSq = entry.getKey().getSquaredDistance(mc.player.getPos());
+                double distSq = entry.getKey().distToCenterSqr(mc.player.position());
                 if (distSq <= rangeSq && distSq < minDistSq) { minDistSq = distSq; bestPos = entry.getKey(); }
             }
         }
@@ -1545,24 +1517,24 @@ public class DungeonAssistant extends Module {
     }
 
     private boolean areMobsNearby() {
-        if (mc.player == null || mc.world == null) return false;
+        if (mc.player == null || mc.level == null) return false;
         double radius = spawnerBreakRange.get();
-        return !mc.world.getEntitiesByClass(HostileEntity.class,
-            new Box(mc.player.getBlockPos()).expand(radius), Entity::isAlive).isEmpty();
+        return !mc.level.getEntitiesOfClass(Monster.class,
+            new AABB(mc.player.blockPosition()).inflate(radius), Entity::isAlive).isEmpty();
     }
 
     private boolean runMinecartCheck() {
         if (!trackChestMinecarts.get() && !trackAnomalousMinecarts.get()) return false;
 
-        List<ChestMinecartEntity> minecarts = mc.world.getEntitiesByClass(
-            ChestMinecartEntity.class,
-            new Box(mc.player.getBlockPos()).expand(4.5),
+        List<MinecartChest> minecarts = mc.level.getEntitiesOfClass(
+            MinecartChest.class,
+            new AABB(mc.player.blockPosition()).inflate(4.5),
             e -> !checkedEntityIds.contains(e.getId())
         );
         if (minecarts.isEmpty()) return false;
 
-        minecarts.sort(Comparator.comparingDouble(e -> mc.player.squaredDistanceTo(e)));
-        ChestMinecartEntity cart = minecarts.get(0);
+        minecarts.sort(Comparator.comparingDouble(e -> mc.player.distanceToSqr(e)));
+        MinecartChest cart = minecarts.get(0);
         if (mc.player.distanceTo(cart) > 4.5) return false;
 
         lastOpenedEntity    = cart;
@@ -1572,8 +1544,8 @@ public class DungeonAssistant extends Module {
         interactTimeoutTimer = INTERACT_TIMEOUT_TICKS;
 
         Rotations.rotate(Rotations.getYaw(cart), Rotations.getPitch(cart), () -> {
-            mc.interactionManager.interactEntity(mc.player, cart, Hand.MAIN_HAND);
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.gameMode.interact(mc.player, cart, new net.minecraft.world.phys.EntityHitResult(cart), InteractionHand.MAIN_HAND);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         });
         return true;
     }
@@ -1585,20 +1557,20 @@ public class DungeonAssistant extends Module {
             .filter(e -> e.getValue() == TargetType.CHEST)
             .map(Map.Entry::getKey)
             .filter(pos -> !checkedContainers.contains(pos))
-            .filter(pos -> Math.sqrt(pos.getSquaredDistance(mc.player.getPos())) <= 4.5)
-            .sorted(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getPos())))
+            .filter(pos -> Math.sqrt(pos.distToCenterSqr(mc.player.position())) <= 4.5)
+            .sorted(Comparator.comparingDouble(pos -> pos.distToCenterSqr(mc.player.position())))
             .toList();
 
         if (nearbyChests.isEmpty()) return false;
 
         BlockPos pos   = nearbyChests.get(0);
-        Block    block = mc.world.getBlockState(pos).getBlock();
+        Block    block = mc.level.getBlockState(pos).getBlock();
 
         checkedContainers.add(pos);
         if (block == Blocks.CHEST || block == Blocks.TRAPPED_CHEST) {
             for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
-                BlockPos neighbor = pos.offset(dir);
-                if (mc.world.getBlockState(neighbor).getBlock() == block) {
+                BlockPos neighbor = pos.relative(dir);
+                if (mc.level.getBlockState(neighbor).getBlock() == block) {
                     checkedContainers.add(neighbor);
                     break;
                 }
@@ -1611,9 +1583,9 @@ public class DungeonAssistant extends Module {
         interactTimeoutTimer = INTERACT_TIMEOUT_TICKS;
 
         Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-            BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
-            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-            mc.player.swingHand(Hand.MAIN_HAND);
+            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         });
         return true;
     }
@@ -1634,21 +1606,21 @@ public class DungeonAssistant extends Module {
 
     private void scanEndermites() {
         endermiteTargets.clear();
-        if (!trackEndermites.get() || mc.world == null || mc.player == null) {
+        if (!trackEndermites.get() || mc.level == null || mc.player == null) {
             notifiedEndermites.clear();
             return;
         }
-        if (!mc.world.getRegistryKey().getValue().toString().equals("minecraft:overworld")) {
+        if (!mc.level.dimension().identifier().toString().equals("minecraft:overworld")) {
             notifiedEndermites.clear();
             return;
         }
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         int    blockRange = range.get() * 16;
-        Box    searchBox  = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB    searchBox  = new AABB(mc.player.blockPosition()).inflate(blockRange);
         Set<Integer> currentIds = new HashSet<>();
 
-        for (EndermiteEntity endermite : mc.world.getEntitiesByClass(EndermiteEntity.class, searchBox, e -> true)) {
+        for (Endermite endermite : mc.level.getEntitiesOfClass(Endermite.class, searchBox, e -> true)) {
             endermiteTargets.add(endermite);
             currentIds.add(endermite.getId());
 
@@ -1660,7 +1632,7 @@ public class DungeonAssistant extends Module {
 
             if (notifiedEndermites.add(endermite.getId())) {
                 info("Endermite Detected, Beam created");
-                mc.player.playSound(SoundEvents.ENTITY_ENDERMITE_AMBIENT, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.ENDERMITE_AMBIENT, 1.0f, 1.0f);
             }
         }
         notifiedEndermites.retainAll(currentIds);
@@ -1668,13 +1640,13 @@ public class DungeonAssistant extends Module {
 
     private void scanXpOrbs() {
         xpOrbTargets.clear();
-        if (!trackXpOrbs.get() || mc.world == null || mc.player == null) return;
+        if (!trackXpOrbs.get() || mc.level == null || mc.player == null) return;
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
 
-        for (ExperienceOrbEntity orb : mc.world.getEntitiesByClass(ExperienceOrbEntity.class, searchBox, e -> true)) {
+        for (ExperienceOrb orb : mc.level.getEntitiesOfClass(ExperienceOrb.class, searchBox, e -> true)) {
             xpOrbTargets.add(orb);
             if (isSpectral) {
                 GlowingRegistry.add(orb.getId(), toArgb(xpOrbColor.get()));
@@ -1691,13 +1663,13 @@ public class DungeonAssistant extends Module {
         for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
             if (entry.getValue() != TargetType.SPAWNER) continue;
             BlockPos spawnerPos = entry.getKey();
-            if (!mc.world.getChunkManager().isChunkLoaded(spawnerPos.getX() >> 4, spawnerPos.getZ() >> 4)) continue;
+            if (!mc.level.getChunkSource().hasChunk(spawnerPos.getX() >> 4, spawnerPos.getZ() >> 4)) continue;
 
             for (int x = -5; x <= 5; x++) {
                 for (int y = -5; y <= 5; y++) {
                     for (int z = -5; z <= 5; z++) {
-                        BlockPos pos = spawnerPos.add(x, y, z);
-                        Block    b   = mc.world.getBlockState(pos).getBlock();
+                        BlockPos pos = spawnerPos.offset(x, y, z);
+                        Block    b   = mc.level.getBlockState(pos).getBlock();
                         if (b == Blocks.TORCH || b == Blocks.WALL_TORCH
                                 || b == Blocks.SOUL_TORCH || b == Blocks.SOUL_WALL_TORCH) {
                             spawnerTorches.add(pos);
@@ -1710,7 +1682,7 @@ public class DungeonAssistant extends Module {
 
     private void scanSpawnerMobs() {
         spawnerMobTargets.clear();
-        if (!trackSpawnerMobs.get() || mc.world == null || mc.player == null) {
+        if (!trackSpawnerMobs.get() || mc.level == null || mc.player == null) {
             notifiedSpawnerMobs.clear();
             activeSpawners.clear();
             for (Integer id : spawnerMobGlowingIds) {
@@ -1734,11 +1706,11 @@ public class DungeonAssistant extends Module {
         Set<BlockPos> newActiveSpawners = new HashSet<>();
 
         for (BlockPos spawnerPos : spawnerPositions) {
-            Box searchBox = new Box(spawnerPos).expand(5);
+            AABB searchBox = new AABB(spawnerPos).inflate(5);
             boolean hasMobs = false;
             
-            for (MobEntity mob : mc.world.getEntitiesByClass(MobEntity.class, searchBox, e -> true)) {
-                if (spawnerPos.getSquaredDistance(mob.getPos()) <= 25) { // 5 blocks radius squared
+            for (Mob mob : mc.level.getEntitiesOfClass(Mob.class, searchBox, e -> true)) {
+                if (spawnerPos.distToCenterSqr(mob.position()) <= 25) { // 5 blocks radius squared
                     spawnerMobTargets.add(mob);
                     currentIds.add(mob.getId());
                     hasMobs = true;
@@ -1761,7 +1733,7 @@ public class DungeonAssistant extends Module {
                 
                 for (Map.Entry<BlockPos, TargetType> targetEntry : targets.entrySet()) {
                     if (targetEntry.getValue() == TargetType.CHEST) {
-                        if (spawnerPos.getSquaredDistance(targetEntry.getKey()) <= chestRadiusSq) {
+                        if (spawnerPos.distSqr(targetEntry.getKey()) <= chestRadiusSq) {
                             hasChestNearby = true;
                             break;
                         }
@@ -1777,11 +1749,11 @@ public class DungeonAssistant extends Module {
         // Action Bar Notification Logic
         if (!newActiveSpawners.isEmpty()) {
             if (spawnerActionBarCooldown <= 0) {
-                Text message = Text.literal("⚠ Active Spawner Detected!").formatted(Formatting.RED, Formatting.BOLD);
-                mc.player.sendMessage(message, true); // true sends it to the action bar (above hotbar)
+                Component message = Component.literal("⚠ Active Spawner Detected!").withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+                com.example.addon.utils.PortCompat.displayMessage(message, true); // true sends it to the action bar (above hotbar)
                 
                 float volume = spawnerAlertVolume.get().floatValue();
-                mc.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), volume, 0.5f); // Low pitch pling
+                mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), volume, 0.5f); // Low pitch pling
                 
                 spawnerActionBarCooldown = 60; // 3 seconds (20 ticks * 3)
             } else {
@@ -1818,8 +1790,8 @@ public class DungeonAssistant extends Module {
         int rSq = r * r;
 
         scannedChunks.removeIf(cp -> {
-            int dx = cp.x - centerChunkX;
-            int dz = cp.z - centerChunkZ;
+            int dx = cp.x() - centerChunkX;
+            int dz = cp.z() - centerChunkZ;
             return dx * dx + dz * dz > rSq;
         });
 
@@ -1856,16 +1828,16 @@ public class DungeonAssistant extends Module {
 
         ChunkPos cp = new ChunkPos(cx, cz);
         if (scannedChunks.contains(cp)) return false;
-        if (!mc.world.getChunkManager().isChunkLoaded(cx, cz)) return false;
+        if (!mc.level.getChunkSource().hasChunk(cx, cz)) return false;
 
-        scanChunk(mc.world.getChunk(cx, cz));
-        scanBlockEntitiesInChunk(mc.world.getChunk(cx, cz));
+        scanChunk(mc.level.getChunk(cx, cz));
+        scanBlockEntitiesInChunk(mc.level.getChunk(cx, cz));
         scannedChunks.add(cp);
         return true;
     }
 
-    private void scanChunk(WorldChunk chunk) {
-        if (mc.world == null) return;
+    private void scanChunk(LevelChunk chunk) {
+        if (mc.level == null) return;
 
         boolean isOverworld = "minecraft:overworld".equals(lastDimension);
         boolean doCustomBlocks = scanCustomBlocks.get() && !filterBlocks.get().isEmpty() && isOverworld;
@@ -1875,15 +1847,15 @@ public class DungeonAssistant extends Module {
 
         int          maxY     = dungeonYLevel.get(); 
         List<Block>  filter   = doCustomBlocks ? filterBlocks.get() : List.of();
-        ChunkSection[] sections = chunk.getSectionArray();
+        LevelChunkSection[] sections = chunk.getSections();
 
         ChunkPos currentChunkPos = chunk.getPos();
 
         for (int i = 0; i < sections.length; i++) {
-            ChunkSection section = sections[i];
-            if (section == null || section.isEmpty()) continue;
+            LevelChunkSection section = sections[i];
+            if (section == null || section.hasOnlyAir()) continue;
 
-            int sectionY    = chunk.getBottomSectionCoord() + i;
+            int sectionY    = chunk.getMinSectionY() + i;
             int sectionMinY = sectionY * 16;
             int sectionMaxY = sectionMinY + 16;
             if (sectionMinY > maxY) continue;
@@ -1896,12 +1868,12 @@ public class DungeonAssistant extends Module {
                     for (int z = 0; z < 16; z++) {
                         BlockState state    = section.getBlockState(x, y, z);
                         Block      block    = state.getBlock();
-                        BlockPos   blockPos = new BlockPos((currentChunkPos.x << 4) + x, worldY, (currentChunkPos.z << 4) + z);
+                        BlockPos   blockPos = new BlockPos((currentChunkPos.x() << 4) + x, worldY, (currentChunkPos.z() << 4) + z);
 
                         if (doCustomBlocks && filter.contains(block)) targets.put(blockPos, TargetType.CUSTOM_BLOCK);
                         if (doMisrotated && block == Blocks.DEEPSLATE
-                                && state.contains(Properties.AXIS)
-                                && state.get(Properties.AXIS) != Axis.Y) {
+                                && state.hasProperty(BlockStateProperties.AXIS)
+                                && state.getValue(BlockStateProperties.AXIS) != net.minecraft.core.Direction.Axis.Y) {
                             targets.put(blockPos, TargetType.MISROTATED_DEEPSLATE);
                         }
 
@@ -1916,32 +1888,32 @@ public class DungeonAssistant extends Module {
         }
     }
 
-    private void scanBlockEntitiesInChunk(WorldChunk chunk) {
+    private void scanBlockEntitiesInChunk(LevelChunk chunk) {
         int maxY = dungeonYLevel.get(); 
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            BlockPos pos = be.getPos();
+            BlockPos pos = be.getBlockPos();
             if (pos.getY() > maxY) continue;
 
-            if ((trackSpawners.get() || autoBreakSpawners.get()) && be instanceof MobSpawnerBlockEntity) {
+            if ((trackSpawners.get() || autoBreakSpawners.get()) && be instanceof SpawnerBlockEntity) {
                 targets.put(pos, TargetType.SPAWNER);
             } else if (trackChests.get()) {
-                Block block = mc.world.getBlockState(pos).getBlock();
+                Block block = mc.level.getBlockState(pos).getBlock();
                 if (block == Blocks.CHEST || block == Blocks.TRAPPED_CHEST) targets.put(pos, TargetType.CHEST);
             }
         }
     }
 
-    private TargetType getMinecartType(ChestMinecartEntity cart) {
-        Vec3d exactPos = cart.getPos();
-        BlockPos blockPos = cart.getBlockPos();
+    private TargetType getMinecartType(MinecartChest cart) {
+        Vec3 exactPos = cart.position();
+        BlockPos blockPos = cart.blockPosition();
 
         // Check for flowing water within 1 block radius
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
                 for (int z = -1; z <= 1; z++) {
-                    FluidState fluidState = mc.world.getFluidState(blockPos.add(x, y, z));
-                    if (fluidState.isOf(Fluids.FLOWING_WATER)) {
+                    FluidState fluidState = mc.level.getFluidState(blockPos.offset(x, y, z));
+                    if (fluidState.is(Fluids.FLOWING_WATER)) {
                         return TargetType.CHEST_MINECART; // Ignore displacement if caused by water
                     }
                 }
@@ -1949,9 +1921,9 @@ public class DungeonAssistant extends Module {
         }
 
         boolean isDisplaced = false;
-        BlockState stateAtPos = mc.world.getBlockState(blockPos);
+        BlockState stateAtPos = mc.level.getBlockState(blockPos);
         
-        if (!stateAtPos.isAir() && !stateAtPos.getCollisionShape(mc.world, blockPos).isEmpty() && !(stateAtPos.getBlock() instanceof AbstractRailBlock)) {
+        if (!stateAtPos.isAir() && !stateAtPos.getCollisionShape(mc.level, blockPos).isEmpty() && !(stateAtPos.getBlock() instanceof BaseRailBlock)) {
             isDisplaced = true;
         } else {
             double closestCenterX = blockPos.getX() + 0.5;
@@ -1966,7 +1938,7 @@ public class DungeonAssistant extends Module {
             if (!isDisplaced) {
                 boolean hasRail = false;
                 for (int y = 0; y >= -1; y--) {
-                    if (mc.world.getBlockState(blockPos.add(0, y, 0)).getBlock() instanceof AbstractRailBlock) {
+                    if (mc.level.getBlockState(blockPos.offset(0, y, 0)).getBlock() instanceof BaseRailBlock) {
                         hasRail = true;
                         break;
                     }
@@ -1978,7 +1950,7 @@ public class DungeonAssistant extends Module {
         }
         if (isDisplaced) return TargetType.DISPLACED_CHEST_MINECART;
 
-        float yaw = ((cart.getYaw() % 360) + 360) % 360;
+        float yaw = ((cart.getYRot() % 360) + 360) % 360;
         float remainder = yaw % 90;
         boolean isMisrotated = remainder > 5.0f && remainder < 85.0f;
         if (isMisrotated) return TargetType.MISROTATED_CHEST_MINECART;
@@ -1991,12 +1963,12 @@ public class DungeonAssistant extends Module {
 
         boolean isSpectral  = renderMode.get() == RenderMode.SPECTRAL;
         int     blockRange  = range.get() * 16;
-        int     worldHeight = mc.world.getHeight();
-        Box     searchBox   = new Box(mc.player.getBlockPos()).expand(blockRange, worldHeight, blockRange);
+        int     worldHeight = mc.level.getHeight();
+        AABB     searchBox   = new AABB(mc.player.blockPosition()).inflate(blockRange, worldHeight, blockRange);
 
         Set<BlockPos> currentPositions = new HashSet<>();
-        for (ChestMinecartEntity minecart : mc.world.getEntitiesByClass(ChestMinecartEntity.class, searchBox, entity -> true)) {
-            BlockPos pos = minecart.getBlockPos();
+        for (MinecartChest minecart : mc.level.getEntitiesOfClass(MinecartChest.class, searchBox, entity -> true)) {
+            BlockPos pos = minecart.blockPosition();
             currentPositions.add(pos);
 
             TargetType type = getMinecartType(minecart);
@@ -2027,7 +1999,7 @@ public class DungeonAssistant extends Module {
                         } else {
                             info("§5Misrotated minecart detected!");
                         }
-                        mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 0.5f);
+                        mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 0.5f);
                     }
                 }
             }
@@ -2044,7 +2016,7 @@ public class DungeonAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void pruneBlockTargets() {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         Set<BlockPos> toRemove = new HashSet<>();
         Set<ChunkPos> chunksToRescan = new HashSet<>();
@@ -2057,9 +2029,9 @@ public class DungeonAssistant extends Module {
             int chunkX = pos.getX() >> 4;
             int chunkZ = pos.getZ() >> 4;
 
-            if (mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
-                if (mc.world.getBlockState(pos).isAir() || !validateBlockType(currentBlock, type)) {
+            if (mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
+                if (mc.level.getBlockState(pos).isAir() || !validateBlockType(currentBlock, type)) {
                     toRemove.add(pos);
                 }
             } else {
@@ -2079,8 +2051,8 @@ public class DungeonAssistant extends Module {
     private void pruneCheckedEntityIds() {
         if (checkedEntityIds.isEmpty() && notifiedAnomalousMinecarts.isEmpty()) return;
         Set<Integer> liveIds = new HashSet<>();
-        for (ChestMinecartEntity e : mc.world.getEntitiesByClass(
-                ChestMinecartEntity.class, new Box(mc.player.getBlockPos()).expand(range.get() * 16), Entity::isAlive)) {
+        for (MinecartChest e : mc.level.getEntitiesOfClass(
+                MinecartChest.class, new AABB(mc.player.blockPosition()).inflate(range.get() * 16), Entity::isAlive)) {
             liveIds.add(e.getId());
         }
         checkedEntityIds.retainAll(liveIds);
@@ -2109,12 +2081,12 @@ public class DungeonAssistant extends Module {
     }
 
     private void removeNeighborFromChecked(BlockPos pos) {
-        if (pos == null || mc.world == null) return;
-        Block block = mc.world.getBlockState(pos).getBlock();
+        if (pos == null || mc.level == null) return;
+        Block block = mc.level.getBlockState(pos).getBlock();
         if (block != Blocks.CHEST && block != Blocks.TRAPPED_CHEST) return;
         for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
-            BlockPos neighbor = pos.offset(dir);
-            if (mc.world.getBlockState(neighbor).getBlock() == block) {
+            BlockPos neighbor = pos.relative(dir);
+            if (mc.level.getBlockState(neighbor).getBlock() == block) {
                 checkedContainers.remove(neighbor);
                 break;
             }
@@ -2125,21 +2097,21 @@ public class DungeonAssistant extends Module {
     // Render Helpers
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private Box getMinecartChestBox(ChestMinecartEntity minecart) {
-        Box    entityBox = minecart.getBoundingBox();
+    private AABB getMinecartChestBox(MinecartChest minecart) {
+        AABB    entityBox = minecart.getBoundingBox();
         double chestSize = 14.0 / 16.0;
-        double xPadding  = (entityBox.getLengthX() - chestSize) / 2.0;
-        double zPadding  = (entityBox.getLengthZ() - chestSize) / 2.0;
+        double xPadding  = (entityBox.getXsize() - chestSize) / 2.0;
+        double zPadding  = (entityBox.getZsize() - chestSize) / 2.0;
         double chestHeight = 10.0 / 16.0;
         double minY      = entityBox.maxY - chestHeight;
-        return new Box(
+        return new AABB(
             entityBox.minX + xPadding, minY,           entityBox.minZ + zPadding,
             entityBox.maxX - xPadding, entityBox.maxY, entityBox.maxZ - zPadding
         );
     }
 
-    private Box createPaddedBox(BlockPos pos) {
-        return new Box(pos.getX(), pos.getY(), pos.getZ(),
+    private AABB createPaddedBox(BlockPos pos) {
+        return new AABB(pos.getX(), pos.getY(), pos.getZ(),
             pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
     }
 
@@ -2205,26 +2177,26 @@ public class DungeonAssistant extends Module {
 
     private void restoreSlot() {
         if (silentMode.get() && previousSlot >= 0 && mc.player != null) {
-            mc.player.getInventory().selectedSlot = previousSlot;
+            mc.player.getInventory().setSelectedSlot(previousSlot);
             previousSlot = -1;
         }
     }
 
     private int findAxe() {
         for (int i = 0; i < 9; i++)
-            if (mc.player.getInventory().getStack(i).getItem() instanceof AxeItem) return i;
+            if (mc.player.getInventory().getItem(i).getItem() instanceof AxeItem) return i;
         return -1;
     }
 
     private int findPickaxe() {
         for (int i = 0; i < 9; i++)
-            if (mc.player.getInventory().getStack(i).getItem() instanceof PickaxeItem) return i;
+            if (mc.player.getInventory().getItem(i).is(net.minecraft.tags.ItemTags.PICKAXES)) return i;
         return -1;
     }
 
     private int findSword() {
         for (int i = 0; i < 9; i++)
-            if (mc.player.getInventory().getStack(i).getItem() instanceof SwordItem) return i;
+            if (mc.player.getInventory().getItem(i).is(net.minecraft.tags.ItemTags.SWORDS)) return i;
         return -1;
     }
 
@@ -2242,7 +2214,7 @@ public class DungeonAssistant extends Module {
     }
 
     public int getTotalTargets() {
-        if (mc.player == null || mc.world == null) return 0;
+        if (mc.player == null || mc.level == null) return 0;
 
         double rangeSq = Math.pow(range.get() * 16.0, 2);
         int count = 0;
@@ -2255,10 +2227,10 @@ public class DungeonAssistant extends Module {
             double dz = pos.getZ() + 0.5 - mc.player.getZ();
             if (dx * dx + dz * dz > rangeSq) continue;
 
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
 
             if (type != TargetType.CHEST_MINECART && type != TargetType.MISROTATED_CHEST_MINECART && type != TargetType.DISPLACED_CHEST_MINECART) {
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
                 if (!validateBlockType(currentBlock, type)) continue;
             }
 
@@ -2275,7 +2247,7 @@ public class DungeonAssistant extends Module {
         Map<TargetType, Integer> counts = new EnumMap<>(TargetType.class);
         for (TargetType type : TargetType.values()) counts.put(type, 0);
 
-        if (mc.player == null || mc.world == null) return counts;
+        if (mc.player == null || mc.level == null) return counts;
 
         double rangeSq = Math.pow(range.get() * 16.0, 2);
 
@@ -2287,10 +2259,10 @@ public class DungeonAssistant extends Module {
             double dz = pos.getZ() + 0.5 - mc.player.getZ();
             if (dx * dx + dz * dz > rangeSq) continue;
 
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
 
             if (type != TargetType.CHEST_MINECART && type != TargetType.MISROTATED_CHEST_MINECART && type != TargetType.DISPLACED_CHEST_MINECART) {
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
                 if (!validateBlockType(currentBlock, type)) continue;
             }
 
@@ -2304,5 +2276,5 @@ public class DungeonAssistant extends Module {
     // Internal Data Classes
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private record BeamData(Box box, SettingColor color) {}
+    private record BeamData(AABB box, SettingColor color) {}
 }

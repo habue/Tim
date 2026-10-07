@@ -6,9 +6,9 @@ import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.Color;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Blocks;
 
 public class PortalMakerHud extends HudElement {
     public static final HudElementInfo<PortalMakerHud> INFO = new HudElementInfo<>(
@@ -32,10 +32,10 @@ public class PortalMakerHud extends HudElement {
         int total = module.portalFramePositions.size();
         int placed = 0;
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.world != null) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) {
             for (BlockPos pos : module.portalFramePositions) {
-                if (mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN)) {
+                if (mc.level.getBlockState(pos).is(Blocks.OBSIDIAN)) {
                     placed++;
                 }
             }

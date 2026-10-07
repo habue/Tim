@@ -31,23 +31,22 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FluidBlock;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.HandSwingC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Core packet mining, queuing, and bursting logic provided by Arkie.
@@ -442,10 +441,10 @@ public class Datamine extends Module {
     @Override
     public void onDeactivate() {
         if (this.primary != null && !this.primary.finished) {
-            this.action(this.primary, PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK, this.primary.pos, this.primary.side);
+            this.action(this.primary, ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, this.primary.pos, this.primary.side);
         }
         if (this.secondary != null && !this.secondary.finished) {
-            this.action(this.secondary, PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK, this.secondary.pos, this.secondary.side);
+            this.action(this.secondary, ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, this.secondary.pos, this.secondary.side);
         }
 
         if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
@@ -460,17 +459,17 @@ public class Datamine extends Module {
     private void onPacketSend(PacketEvent.Send event) {
         if (this.miningMode.get() == MiningMode.Normal || sendingCustomPacket) return;
 
-        if (event.packet instanceof PlayerActionC2SPacket packet) {
-            PlayerActionC2SPacket.Action action = packet.getAction();
-            if (action == PlayerActionC2SPacket.Action.START_DESTROY_BLOCK ||
-                action == PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK ||
-                action == PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK) {
+        if (event.packet instanceof ServerboundPlayerActionPacket packet) {
+            ServerboundPlayerActionPacket.Action action = packet.getAction();
+            if (action == ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK ||
+                action == ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK ||
+                action == ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK) {
 
                 if (this.isTracked(packet.getPos())) {
                     event.cancel();
                 }
 
-                if (this.instantRemine.get() && this.last != null && action == PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK && packet.getPos().equals(this.last.pos)) {
+                if (this.instantRemine.get() && this.last != null && action == ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK && packet.getPos().equals(this.last.pos)) {
                     event.cancel();
                 }
             }
@@ -479,7 +478,7 @@ public class Datamine extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (this.mc.player == null || this.mc.world == null || this.mc.interactionManager == null) return;
+        if (this.mc.player == null || this.mc.level == null || this.mc.gameMode == null) return;
 
         this.tick++;
 
@@ -505,7 +504,7 @@ public class Datamine extends Module {
         if (!this.render.get()) return;
 
         for (Request request : this.queue) {
-            this.renderBox(event, new Box(request.pos), this.queueColor.get());
+            this.renderBox(event, new AABB(request.pos), this.queueColor.get());
         }
 
         if (this.secondary != null) {
@@ -518,10 +517,10 @@ public class Datamine extends Module {
 
     // --- Nuker Logic ---
     private void doNuking() {
-        if (this.mc.player == null || this.mc.world == null) return;
+        if (this.mc.player == null || this.mc.level == null) return;
 
-        BlockPos basePos = this.mc.player.getBlockPos();
-        Direction facing = this.mc.player.getHorizontalFacing();
+        BlockPos basePos = this.mc.player.blockPosition();
+        Direction facing = this.mc.player.getDirection();
 
         if (this.nukerMode.get() == NukerMode.Tunnel) {
             int width = 1, height = 2;
@@ -544,7 +543,7 @@ public class Datamine extends Module {
         } else if (this.nukerMode.get() == NukerMode.Hole) {
             for (int x = -1; x <= 1; x++) {
                 for (int z = -1; z <= 1; z++) {
-                    BlockPos pos = basePos.add(x, -1, z);
+                    BlockPos pos = basePos.offset(x, -1, z);
                     this.tryMine(pos);
                 }
             }
@@ -554,10 +553,10 @@ public class Datamine extends Module {
     }
 
     private BlockPos getTunnelPos(BlockPos base, Direction facing, int offsetX, int offsetY) {
-        if (facing == Direction.NORTH) return base.add(offsetX, offsetY, -1);
-        if (facing == Direction.SOUTH) return base.add(offsetX, offsetY, 1);
-        if (facing == Direction.WEST) return base.add(-1, offsetY, offsetX);
-        if (facing == Direction.EAST) return base.add(1, offsetY, offsetX);
+        if (facing == Direction.NORTH) return base.offset(offsetX, offsetY, -1);
+        if (facing == Direction.SOUTH) return base.offset(offsetX, offsetY, 1);
+        if (facing == Direction.WEST) return base.offset(-1, offsetY, offsetX);
+        if (facing == Direction.EAST) return base.offset(1, offsetY, offsetX);
         return base;
     }
 
@@ -565,8 +564,8 @@ public class Datamine extends Module {
         if (pos == null) return;
         if (this.isTracked(pos)) return;
 
-        BlockState state = this.mc.world.getBlockState(pos);
-        if (state.isAir() || state.getBlock() instanceof FluidBlock) return;
+        BlockState state = this.mc.level.getBlockState(pos);
+        if (state.isAir() || state.getBlock() instanceof LiquidBlock) return;
 
         if (!this.isBlockAllowed(state.getBlock())) return;
 
@@ -628,21 +627,21 @@ public class Datamine extends Module {
         if (pos == null) return false;
         
         // Prevent mining any floor blocks if the player is on the ground
-        if (this.excavatorIgnoreFloor.get() && this.mc.player.isOnGround()) {
-            if (pos.getY() < this.mc.player.getBlockPos().getY()) {
+        if (this.excavatorIgnoreFloor.get() && this.mc.player.onGround()) {
+            if (pos.getY() < this.mc.player.blockPosition().getY()) {
                 return false;
             }
         }
 
-        BlockState state = this.mc.world.getBlockState(pos);
-        if (state.isAir() || state.getBlock() instanceof FluidBlock) return false;
-        if (state.getHardness(this.mc.world, pos) < 0.0F) return false; // Unbreakable
+        BlockState state = this.mc.level.getBlockState(pos);
+        if (state.isAir() || state.getBlock() instanceof LiquidBlock) return false;
+        if (state.getDestroySpeed(this.mc.level, pos) < 0.0F) return false; // Unbreakable
         if (this.blockList.get().isEmpty()) return false; // Strictly whitelist only
         return this.blockList.get().contains(state.getBlock());
     }
 
     private BlockPos findExcavatorTarget() {
-        BlockPos playerPos = this.mc.player.getBlockPos();
+        BlockPos playerPos = this.mc.player.blockPosition();
         int range = this.excavatorRange.get();
         BlockPos closest = null;
         double closestDist = Double.MAX_VALUE;
@@ -657,14 +656,14 @@ public class Datamine extends Module {
                         if (y != 0) continue;
                     }
 
-                    BlockPos pos = playerPos.add(x, y, z);
+                    BlockPos pos = playerPos.offset(x, y, z);
                     if (this.isTracked(pos)) continue;
                     if (!this.isExcavatable(pos)) continue;
                     
-                    double dist = this.mc.player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                    double dist = this.mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
                     if (dist < closestDist) {
                         closestDist = dist;
-                        closest = pos.toImmutable();
+                        closest = pos.immutable();
                     }
                 }
             }
@@ -674,12 +673,12 @@ public class Datamine extends Module {
 
     // --- Queue & Target Management ---
     public void mine(BlockPos pos, Direction side) {
-        if (this.mc.player == null || this.mc.world == null || this.mc.interactionManager == null || pos == null || side == null) return;
+        if (this.mc.player == null || this.mc.level == null || this.mc.gameMode == null || pos == null || side == null) return;
 
-        pos = pos.toImmutable();
+        pos = pos.immutable();
         if (this.isTracked(pos)) return;
 
-        BlockState state = this.mc.world.getBlockState(pos);
+        BlockState state = this.mc.level.getBlockState(pos);
         if (!this.breakable(pos, state)) return;
 
         this.queue.addLast(new Request(pos, side, 0));
@@ -713,7 +712,7 @@ public class Datamine extends Module {
             Retry retry = iterator.next();
             if (now < retry.ready) continue;
 
-            BlockState state = this.mc.world.getBlockState(retry.request.pos);
+            BlockState state = this.mc.level.getBlockState(retry.request.pos);
             iterator.remove();
 
             if (!this.breakable(retry.request.pos, state)) continue;
@@ -722,8 +721,8 @@ public class Datamine extends Module {
     }
 
     private void clean() {
-        this.queue.removeIf(request -> !this.breakable(request.pos, this.mc.world.getBlockState(request.pos)));
-        this.waiting.removeIf(retry -> !this.breakable(retry.request.pos, this.mc.world.getBlockState(retry.request.pos)));
+        this.queue.removeIf(request -> !this.breakable(request.pos, this.mc.level.getBlockState(request.pos)));
+        this.waiting.removeIf(retry -> !this.breakable(retry.request.pos, this.mc.level.getBlockState(retry.request.pos)));
     }
 
     private void fill() {
@@ -749,7 +748,7 @@ public class Datamine extends Module {
         while (!this.queue.isEmpty()) {
             Request request = this.queue.removeFirst();
 
-            BlockState state = this.mc.world.getBlockState(request.pos);
+            BlockState state = this.mc.level.getBlockState(request.pos);
             if (!this.breakable(request.pos, state)) continue;
 
             Direction side = this.face(request.pos, request.side);
@@ -772,7 +771,7 @@ public class Datamine extends Module {
 
     private void park() {
         Target target = this.primary;
-        this.action(target, PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos, target.side);
+        this.action(target, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, target.pos, target.side);
 
         Target parked = new Target(
             new Request(target.pos, target.side, target.retry),
@@ -827,7 +826,7 @@ public class Datamine extends Module {
     // --- Server Block Update Hook ---
     public void onServerBlockUpdate(BlockPos pos, BlockState state) {
         if (pos == null || state == null) return;
-        BlockPos immutablePos = pos.toImmutable();
+        BlockPos immutablePos = pos.immutable();
 
         if (this.primary != null && this.primary.pos.equals(immutablePos)) {
             if (state.isAir()) {
@@ -859,16 +858,16 @@ public class Datamine extends Module {
     // --- Vanilla Bypass ---
     public boolean bypass(BlockPos pos) {
         if (this.mc.player == null ||
-            this.mc.world == null || pos == null ||
+            this.mc.level == null || pos == null ||
             this.vanilla.get() <= 0 || this.isTracked(pos)) {
             return false;
         }
 
-        BlockState state = this.mc.world.getBlockState(pos);
+        BlockState state = this.mc.level.getBlockState(pos);
         if (!this.breakable(pos, state)) return false;
 
-        float delta = state.calcBlockBreakingDelta(
-            this.mc.player, this.mc.world, pos
+        float delta = state.getDestroyProgress(
+            this.mc.player, this.mc.level, pos
         );
 
         return delta >= 1.0F / this.vanilla.get();
@@ -905,16 +904,16 @@ public class Datamine extends Module {
 
         target.instant = target.delta >= 1.0F;
 
-        this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK, target.pos, target.side);
+        this.packet(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, target.pos, target.side);
 
         if (this.miningMode.get() == MiningMode.Packet && !target.instant) {
-            this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK, this.fake(target.pos), target.side);
+            this.packet(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, this.fake(target.pos), target.side);
         }
 
         if (this.silentSwing.get()) {
-            this.mc.player.networkHandler.sendPacket(new HandSwingC2SPacket(Hand.MAIN_HAND));
+            this.mc.player.connection.send(new ServerboundSwingPacket(InteractionHand.MAIN_HAND));
         } else {
-            this.mc.player.swingHand(Hand.MAIN_HAND);
+            this.mc.player.swing(InteractionHand.MAIN_HAND);
         }
 
         if (target.instant) this.finish(target);
@@ -924,7 +923,7 @@ public class Datamine extends Module {
     private void update(Target target) {
         if (target == null) return;
 
-        BlockState state = this.mc.world.getBlockState(target.pos);
+        BlockState state = this.mc.level.getBlockState(target.pos);
 
         if (state.isAir()) {
             this.confirm(target);
@@ -1005,7 +1004,7 @@ public class Datamine extends Module {
         BlockPos pos = this.fake(target.pos);
 
         for (int idx = 0; idx < BURST_COUNT; idx++) {
-            this.packet(PlayerActionC2SPacket.Action.START_DESTROY_BLOCK, pos, target.side);
+            this.packet(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, pos, target.side);
         }
 
         target.burst = true;
@@ -1023,14 +1022,14 @@ public class Datamine extends Module {
         this.fast = target.burst;
 
         if (target == this.primary && !target.instant) {
-            this.action(target, PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, target.pos, target.side);
+            this.action(target, ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, target.pos, target.side);
         }
 
         this.stopped = System.currentTimeMillis();
     }
 
     private void verify(Target target) {
-        BlockState state = this.mc.world.getBlockState(target.pos);
+        BlockState state = this.mc.level.getBlockState(target.pos);
 
         if (state.isAir()) {
             this.confirm(target);
@@ -1041,7 +1040,7 @@ public class Datamine extends Module {
     }
 
     private void fail(Target target) {
-        BlockState state = this.mc.world.getBlockState(target.pos);
+        BlockState state = this.mc.level.getBlockState(target.pos);
 
         boolean reachable = this.reachable(target.pos);
         boolean identical = state.equals(target.state);
@@ -1049,7 +1048,7 @@ public class Datamine extends Module {
         Direction side = this.face(target.pos, target.side);
         target.side = side;
 
-        this.action(target, PlayerActionC2SPacket.Action.ABORT_DESTROY_BLOCK, target.pos, target.side);
+        this.action(target, ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, target.pos, target.side);
         this.remove(target, false);
 
         if (!reachable || !identical || target.retry >= this.maxRetries.get()) {
@@ -1078,14 +1077,14 @@ public class Datamine extends Module {
             return false;
         }
 
-        BlockState state = this.mc.world.getBlockState(this.last.pos);
+        BlockState state = this.mc.level.getBlockState(this.last.pos);
         if (!this.breakable(this.last.pos, state)) return false;
 
         Direction side = this.face(this.last.pos, this.last.side);
         int slot = this.best(state, this.last.pos);
 
         this.select(slot);
-        this.packet(PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK, this.last.pos, side);
+        this.packet(ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, this.last.pos, side);
         this.revertSlot();
 
         this.stopped = System.currentTimeMillis();
@@ -1120,7 +1119,7 @@ public class Datamine extends Module {
         Hotbar.set(target.slot);
 
         try {
-            return target.state.calcBlockBreakingDelta(this.mc.player, this.mc.world, target.pos);
+            return target.state.getDestroyProgress(this.mc.player, this.mc.level, target.pos);
         } finally {
             Hotbar.set(selected);
         }
@@ -1149,21 +1148,21 @@ public class Datamine extends Module {
         float speed = -1.0F;
 
         boolean suitable = false;
-        boolean required = state.isToolRequired();
+        boolean required = state.requiresCorrectToolForDrops();
 
         try {
             for (int idx = 0; idx < 9; idx++) {
                 ItemStack stack = Hotbar.stack(idx);
 
-                if (this.durabilityProtection.get() && stack.isDamageable()) {
-                    int remaining = stack.getMaxDamage() - stack.getDamage();
+                if (this.durabilityProtection.get() && stack.isDamageableItem()) {
+                    int remaining = stack.getMaxDamage() - stack.getDamageValue();
                     if (remaining <= this.durabilityThreshold.get()) continue;
                 }
 
-                boolean good = stack.isSuitableFor(state);
+                boolean good = stack.isCorrectToolForDrops(state);
                 Hotbar.set(idx);
 
-                float value = state.calcBlockBreakingDelta(this.mc.player, this.mc.world, pos);
+                float value = state.getDestroyProgress(this.mc.player, this.mc.level, pos);
 
                 if (required && good != suitable) {
                     if (!good) continue;
@@ -1186,7 +1185,7 @@ public class Datamine extends Module {
         return best;
     }
 
-    private void action(Target target, PlayerActionC2SPacket.Action action, BlockPos pos, Direction side) {
+    private void action(Target target, ServerboundPlayerActionPacket.Action action, BlockPos pos, Direction side) {
         target.side = this.face(target.pos, target.side);
         target.slot = this.best(target.state, target.pos);
 
@@ -1220,14 +1219,14 @@ public class Datamine extends Module {
         this.swapped = false;
     }
 
-    private void packet(PlayerActionC2SPacket.Action action, BlockPos pos, Direction side) {
-        if (this.mc.world == null || this.mc.interactionManager == null) return;
+    private void packet(ServerboundPlayerActionPacket.Action action, BlockPos pos, Direction side) {
+        if (this.mc.level == null || this.mc.gameMode == null) return;
 
         sendingCustomPacket = true;
         try {
-            ((InteractionAccessor) this.mc.interactionManager).Tim$sendSequencedPacket(
-                this.mc.world,
-                sequence -> new PlayerActionC2SPacket(action, pos, side, sequence)
+            ((InteractionAccessor) this.mc.gameMode).Tim$sendSequencedPacket(
+                this.mc.level,
+                sequence -> new ServerboundPlayerActionPacket(action, pos, side, sequence)
             );
         } finally {
             sendingCustomPacket = false;
@@ -1240,18 +1239,18 @@ public class Datamine extends Module {
 
     // --- Block Targeting & Validation ---
     private Direction face(BlockPos pos, Direction fallback) {
-        Vec3d eye = this.mc.player.getEyePos();
+        Vec3 eye = this.mc.player.getEyePosition();
 
         Direction best = fallback == null ? Direction.UP : fallback;
         double distance = Double.POSITIVE_INFINITY;
 
         for (Direction side : Direction.values()) {
-            Vec3d point = this.point(pos, side);
+            Vec3 point = this.point(pos, side);
 
-            BlockHitResult hit = this.mc.world.raycast(
-                new RaycastContext(eye, point,
-                    RaycastContext.ShapeType.COLLIDER,
-                    RaycastContext.FluidHandling.NONE,
+            BlockHitResult hit = this.mc.level.clip(
+                new ClipContext(eye, point,
+                    ClipContext.Block.COLLIDER,
+                    ClipContext.Fluid.NONE,
                     this.mc.player
                 )
             );
@@ -1261,11 +1260,11 @@ public class Datamine extends Module {
                 continue;
             }
 
-            double value = eye.squaredDistanceTo(point);
+            double value = eye.distanceToSqr(point);
             if (value >= distance) continue;
 
             distance = value;
-            best = hit.getSide();
+            best = hit.getDirection();
         }
 
         if (distance < Double.POSITIVE_INFINITY) {
@@ -1273,9 +1272,9 @@ public class Datamine extends Module {
         }
 
         for (Direction side : Direction.values()) {
-            Vec3d point = this.point(pos, side);
+            Vec3 point = this.point(pos, side);
 
-            double value = eye.squaredDistanceTo(point);
+            double value = eye.distanceToSqr(point);
             if (value >= distance) continue;
 
             distance = value;
@@ -1285,22 +1284,22 @@ public class Datamine extends Module {
         return best;
     }
 
-    private Vec3d point(BlockPos pos, Direction side) {
-        return new Vec3d(
-            pos.getX() + 0.5 + side.getOffsetX() * 0.49,
-            pos.getY() + 0.5 + side.getOffsetY() * 0.49,
-            pos.getZ() + 0.5 + side.getOffsetZ() * 0.49
+    private Vec3 point(BlockPos pos, Direction side) {
+        return new Vec3(
+            pos.getX() + 0.5 + side.getStepX() * 0.49,
+            pos.getY() + 0.5 + side.getStepY() * 0.49,
+            pos.getZ() + 0.5 + side.getStepZ() * 0.49
         );
     }
 
     private boolean breakable(BlockPos pos, BlockState state) {
         return this.reachable(pos) && !state.isAir()
-            && !(state.getBlock() instanceof FluidBlock)
-            && state.getHardness(this.mc.world, pos) >= 0.0F;
+            && !(state.getBlock() instanceof LiquidBlock)
+            && state.getDestroySpeed(this.mc.level, pos) >= 0.0F;
     }
 
     private boolean reachable(BlockPos pos) {
-        Vec3d eye = this.mc.player.getEyePos();
+        Vec3 eye = this.mc.player.getEyePosition();
 
         double px = Math.max(pos.getX(), Math.min(eye.x, pos.getX() + 1.0));
         double py = Math.max(pos.getY(), Math.min(eye.y, pos.getY() + 1.0));
@@ -1315,13 +1314,13 @@ public class Datamine extends Module {
 
     // --- Auto-Collect Logic ---
     private void checkForNewItems() {
-        if (!this.autoCollect.get() || this.mc.player == null || this.mc.world == null) return;
+        if (!this.autoCollect.get() || this.mc.player == null || this.mc.level == null) return;
 
         boolean foundNew = false;
-        List<ItemEntity> items = this.mc.world.getEntitiesByClass(ItemEntity.class,
-            this.mc.player.getBoundingBox().expand(this.collectRange.get()), e -> {
+        List<ItemEntity> items = this.mc.level.getEntitiesOfClass(ItemEntity.class,
+            this.mc.player.getBoundingBox().inflate(this.collectRange.get()), e -> {
                 if (this.collectWhitelist.get().isEmpty()) return true;
-                return this.collectWhitelist.get().contains(e.getStack().getItem());
+                return this.collectWhitelist.get().contains(e.getItem().getItem());
             });
 
         for (ItemEntity item : items) {
@@ -1334,11 +1333,11 @@ public class Datamine extends Module {
             this.lastMineTime = System.currentTimeMillis();
         }
 
-        this.seenItems.removeIf(id -> this.mc.world.getEntityById(id) == null);
+        this.seenItems.removeIf(id -> this.mc.level.getEntity(id) == null);
     }
 
     private void doAutoCollect() {
-        if (!this.autoCollect.get() || this.mc.player == null || this.mc.world == null) return;
+        if (!this.autoCollect.get() || this.mc.player == null || this.mc.level == null) return;
         if (Modules.get().isActive(PortalMaker.class)) return;
 
         long currentTime = System.currentTimeMillis();
@@ -1372,14 +1371,14 @@ public class Datamine extends Module {
         ItemEntity closestItem = null;
         double closestDist = this.collectRange.get() * this.collectRange.get();
 
-        List<ItemEntity> items = this.mc.world.getEntitiesByClass(ItemEntity.class,
-            this.mc.player.getBoundingBox().expand(this.collectRange.get()), e -> {
+        List<ItemEntity> items = this.mc.level.getEntitiesOfClass(ItemEntity.class,
+            this.mc.player.getBoundingBox().inflate(this.collectRange.get()), e -> {
                 if (this.collectWhitelist.get().isEmpty()) return true;
-                return this.collectWhitelist.get().contains(e.getStack().getItem());
+                return this.collectWhitelist.get().contains(e.getItem().getItem());
             });
 
         for (ItemEntity item : items) {
-            double dist = item.squaredDistanceTo(this.mc.player);
+            double dist = item.distanceToSqr(this.mc.player);
             if (dist < closestDist) {
                 closestDist = dist;
                 closestItem = item;
@@ -1387,7 +1386,7 @@ public class Datamine extends Module {
         }
 
         if (closestItem != null) {
-            BlockPos itemPos = closestItem.getBlockPos();
+            BlockPos itemPos = closestItem.blockPosition();
             BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalBlock(itemPos));
         }
     }
@@ -1396,7 +1395,7 @@ public class Datamine extends Module {
     private void renderTarget(Render3DEvent event, Target target, SettingColor color) {
         double offset = (1.0 - this.visual(target)) / 2.0;
 
-        Box box = new Box(
+        AABB box = new AABB(
             target.pos.getX() + offset,
             target.pos.getY() + offset,
             target.pos.getZ() + offset,
@@ -1408,10 +1407,10 @@ public class Datamine extends Module {
         this.renderBox(event, box, color);
     }
 
-    private void renderBox(Render3DEvent event, Box box, SettingColor color) {
+    private void renderBox(Render3DEvent event, AABB box, SettingColor color) {
         if (this.highlightStyle.get() == HighlightStyle.SPECTRAL) {
             double expand = this.spectralExpand.get();
-            Box renderBox = box.expand(expand);
+            AABB renderBox = box.inflate(expand);
             SettingColor sideColor = this.withAlpha(color, Math.max(4, color.a / 4));
             event.renderer.box(renderBox, this.withAlpha(sideColor, this.spectralFillAlpha.get()), this.withAlpha(color, this.spectralLineAlpha.get()), ShapeMode.Both, 0);
         } else if (this.highlightStyle.get() == HighlightStyle.GLOW) {
@@ -1423,14 +1422,14 @@ public class Datamine extends Module {
         }
     }
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = this.glowLayers.get();
         double spread = this.glowSpread.get();
         int baseAlpha = this.glowBaseAlpha.get();
 
         for (int i = layers; i >= 1; i--) {
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i-1) / layers)));
-            event.renderer.box(box.expand(spread * i), this.withAlpha(color, layerAlpha), this.withAlpha(color, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(spread * i), this.withAlpha(color, layerAlpha), this.withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
 
@@ -1448,7 +1447,7 @@ public class Datamine extends Module {
         return Math.min(255, Math.max(0, (int)(min + (max - min) * f)));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor color) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor color) {
         int pa = applyPulse(color.a);
         SettingColor pColor = this.withAlpha(color, pa);
         int layers = this.glowLayers.get();
@@ -1458,7 +1457,7 @@ public class Datamine extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion), this.withAlpha(pColor, layerAlpha), this.withAlpha(pColor, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(expansion), this.withAlpha(pColor, layerAlpha), this.withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
 
         event.renderer.box(box, this.withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -1471,7 +1470,7 @@ public class Datamine extends Module {
     // --- Data Structures ---
     private record Request(BlockPos pos, Direction side, int retry) {
         private Request {
-            pos = pos.toImmutable();
+            pos = pos.immutable();
         }
     }
 

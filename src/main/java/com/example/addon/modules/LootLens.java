@@ -9,7 +9,11 @@ import java.util.Set;
 
 import com.example.addon.Tim;
 import com.mojang.blaze3d.systems.RenderSystem;
-
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -25,37 +29,30 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.ChestBlock;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.enums.ChestType;
-import net.minecraft.client.gl.ShaderProgramKeys;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class LootLens extends Module {
 
@@ -319,8 +316,8 @@ public class LootLens extends Module {
     @Override
     public void onActivate() {
         clearAllState();
-        if (mc.player != null && mc.world != null && mc.world.getRegistryKey() != null)
-            lastDimension = mc.world.getRegistryKey().getValue().toString();
+        if (mc.player != null && mc.level != null && mc.level.dimension() != null)
+            lastDimension = mc.level.dimension().identifier().toString();
     }
 
     @Override
@@ -334,43 +331,43 @@ public class LootLens extends Module {
 
     @EventHandler
     private void onTickPre(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
-        try { if (mc.world.getRegistryKey() == null) return; } catch (Exception e) { return; }
+        if (mc.player == null || mc.level == null) return;
+        try { if (mc.level.dimension() == null) return; } catch (Exception e) { return; }
         if (dimensionChangeCooldown > 0) { dimensionChangeCooldown--; return; }
         try {
-            String currDim = mc.world.getRegistryKey().getValue().toString();
+            String currDim = mc.level.dimension().identifier().toString();
             if (!currDim.equals(lastDimension)) {
                 dimensionChangeCooldown = DIMENSION_CHANGE_COOLDOWN_TICKS;
                 lastDimension = currDim; clearAllState(); return;
             }
         } catch (Exception ignored) { return; }
         if (++cleanupTimer >= CLEANUP_INTERVAL) { cleanupTimer = 0; cleanupDistantContainers(); }
-        BlockPos currentPos = mc.player.getBlockPos();
+        BlockPos currentPos = mc.player.blockPosition();
         scanBlockEntities(currentPos.getX() >> 4, currentPos.getZ() >> 4);
     }
 
     @EventHandler
     private void onTickPost(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
-        if (mc.currentScreen instanceof HandledScreen<?>
-                && !(mc.currentScreen instanceof InventoryScreen)
+        if (mc.player == null || mc.level == null) return;
+        if (mc.screen instanceof AbstractContainerScreen<?>
+                && !(mc.screen instanceof InventoryScreen)
                 && lastOpenedContainer != null && !screenInventoryChecked) {
-            HandledScreen<?> screen = (HandledScreen<?>) mc.currentScreen;
+            AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) mc.screen;
             if (containers.containsKey(lastOpenedContainer) || shulkerContainers.contains(lastOpenedContainer)) {
                 checkScreenInventoryForShulkers(screen); screenInventoryChecked = true;
             }
         }
-        if (mc.currentScreen == null && lastOpenedContainer != null) {
+        if (mc.screen == null && lastOpenedContainer != null) {
             lastOpenedContainer = null; screenInventoryChecked = false;
         }
     }
 
     @EventHandler
     private void onOpenScreen(OpenScreenEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         screenInventoryChecked = false;
         if (event.screen instanceof InventoryScreen) return;
-        HitResult hitResult = mc.crosshairTarget;
+        HitResult hitResult = mc.hitResult;
         if (hitResult != null && hitResult.getType() == HitResult.Type.BLOCK)
             lastOpenedContainer = ((BlockHitResult) hitResult).getBlockPos();
     }
@@ -385,15 +382,15 @@ public class LootLens extends Module {
         };
     }
 
-    private void checkScreenInventoryForShulkers(HandledScreen<?> screen) {
+    private void checkScreenInventoryForShulkers(AbstractContainerScreen<?> screen) {
         if (lastOpenedContainer == null) return;
-        if (mc.world != null && mc.world.getBlockState(lastOpenedContainer).getBlock() == Blocks.ENDER_CHEST) return;
-        ScreenHandler handler    = screen.getScreenHandler();
+        if (mc.level != null && mc.level.getBlockState(lastOpenedContainer).getBlock() == Blocks.ENDER_CHEST) return;
+        AbstractContainerMenu handler    = screen.getMenu();
         int playerInventoryStart = handler.slots.size() - 36;
         int shulkerCount         = 0;
         boolean previouslyHad    = shulkerContainers.contains(lastOpenedContainer);
         for (int i = 0; i < playerInventoryStart; i++) {
-            Slot slot = handler.slots.get(i); ItemStack stack = slot.getStack();
+            Slot slot = handler.slots.get(i); ItemStack stack = slot.getItem();
             if (stack.isEmpty()) continue;
             boolean isShulker = stack.getItem() instanceof BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock;
             if (isShulker || customItems.get().contains(stack.getItem())) shulkerCount++;
@@ -411,7 +408,7 @@ public class LootLens extends Module {
             shulkerCounts.put(lastOpenedContainer, shulkerCount);
             if (adjacentChest != null) { shulkerContainers.add(adjacentChest); shulkerCounts.put(adjacentChest, shulkerCount); }
             if (!previouslyHad && notification.get()) {
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                 info("%d %s found!", shulkerCount, shulkerCount == 1 ? "item" : "items");
             }
         } else {
@@ -428,20 +425,20 @@ public class LootLens extends Module {
         int chunkRange   = (rangeBlocks >> 4) + 1;
         int chunkRangeSq = chunkRange * chunkRange;
         int maxDistSq    = rangeBlocks * rangeBlocks;
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         for (int cx = centerChunkX - chunkRange; cx <= centerChunkX + chunkRange; cx++) {
             for (int cz = centerChunkZ - chunkRange; cz <= centerChunkZ + chunkRange; cz++) {
                 int dx = cx - centerChunkX, dz = cz - centerChunkZ;
                 if (dx * dx + dz * dz > chunkRangeSq) continue;
-                WorldChunk chunk = mc.world.getChunkManager().getChunk(cx, cz, ChunkStatus.FULL, false);
+                LevelChunk chunk = mc.level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
                 if (chunk == null) continue;
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
-                    BlockPos pos = be.getPos();
-                    if (pos.getSquaredDistance(playerPos) > maxDistSq) continue;
+                    BlockPos pos = be.getBlockPos();
+                    if (pos.distSqr(playerPos) > maxDistSq) continue;
                     if (scannedByScanner.contains(pos)
                             && !shulkerContainers.contains(pos)
                             && !inventoryCheckedContainers.contains(pos)) continue;
-                    Block block = mc.world.getBlockState(pos).getBlock();
+                    Block block = mc.level.getBlockState(pos).getBlock();
                     StorageType type = classifyBlock(block);
                     if (type != null) { containers.put(pos, type); scannedByScanner.add(pos); }
                 }
@@ -468,20 +465,20 @@ public class LootLens extends Module {
     }
 
     private BlockPos findAdjacentChest(BlockPos pos, boolean checkContainers) {
-        if (mc.world == null) return null;
-        BlockState state = mc.world.getBlockState(pos);
+        if (mc.level == null) return null;
+        BlockState state = mc.level.getBlockState(pos);
         if (!(state.getBlock() instanceof ChestBlock)) return null;
         try {
-            ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+            ChestType chestType = state.getValue(ChestBlock.TYPE);
             if (chestType == ChestType.SINGLE) return null;
-            Direction facing      = state.get(ChestBlock.FACING);
+            Direction facing      = state.getValue(ChestBlock.FACING);
             Direction neighborDir = chestType == ChestType.LEFT
-                ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
-            BlockPos   neighborPos   = pos.offset(neighborDir);
-            BlockState neighborState = mc.world.getBlockState(neighborPos);
+                ? facing.getClockWise() : facing.getCounterClockWise();
+            BlockPos   neighborPos   = pos.relative(neighborDir);
+            BlockState neighborState = mc.level.getBlockState(neighborPos);
             if (!(neighborState.getBlock() instanceof ChestBlock)) return null;
-            ChestType  neighborType   = neighborState.get(ChestBlock.CHEST_TYPE);
-            Direction  neighborFacing = neighborState.get(ChestBlock.FACING);
+            ChestType  neighborType   = neighborState.getValue(ChestBlock.TYPE);
+            Direction  neighborFacing = neighborState.getValue(ChestBlock.FACING);
             if (neighborFacing != facing || neighborType == ChestType.SINGLE || neighborType == chestType) return null;
             if (checkContainers && !containers.containsKey(neighborPos)) return null;
             return neighborPos;
@@ -500,12 +497,12 @@ public class LootLens extends Module {
 
     private void cleanupDistantContainers() {
         if (mc.player == null) return;
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int cleanupRange   = range.get() + (range.get() >> 1);
         int cleanupRangeSq = cleanupRange * cleanupRange;
 
         containers.entrySet().removeIf(entry -> {
-            if (entry.getKey().getSquaredDistance(playerPos) <= cleanupRangeSq) return false;
+            if (entry.getKey().distSqr(playerPos) <= cleanupRangeSq) return false;
             BlockPos pos = entry.getKey();
             inventoryCheckedContainers.remove(pos); scannedByScanner.remove(pos);
             shulkerContainers.remove(pos); shulkerCounts.remove(pos);
@@ -515,7 +512,7 @@ public class LootLens extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         boolean isPulse    = renderMode.get() == RenderMode.PULSE;
         Set<BlockPos>  toRemove             = new HashSet<>();
@@ -531,10 +528,10 @@ public class LootLens extends Module {
 
             if (renderedDoubleChests.contains(pos)) continue;
 
-            Box renderBox;
+            AABB renderBox;
             SettingColor baseColor;
 
-            BlockState currentState = mc.world.getBlockState(pos);
+            BlockState currentState = mc.level.getBlockState(pos);
             if (!validateBlockType(currentState.getBlock(), type)) { toRemove.add(pos); continue; }
             BlockPos adjacentPos = findAdjacentChest(pos, true);
             if (adjacentPos != null) {
@@ -578,12 +575,12 @@ public class LootLens extends Module {
         }
     }
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get(); double spread = glowSpread.get(); int baseAlpha = glowBaseAlpha.get();
         for (int i = layers; i >= 1; i--) {
             double expansion = spread * i; double t = (double)(i - 1) / layers;
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - t * t)));
-            event.renderer.box(box.expand(expansion), withAlpha(color, layerAlpha),
+            event.renderer.box(box.inflate(expansion), withAlpha(color, layerAlpha),
                 withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
@@ -606,7 +603,7 @@ public class LootLens extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -615,7 +612,7 @@ public class LootLens extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -645,33 +642,33 @@ public class LootLens extends Module {
         }
     }
 
-    private void renderBoxBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
+    private void renderBoxBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
         double beamSize = beamWidth.get() / 100.0;
         double centerX  = (anchorBox.minX + anchorBox.maxX) / 2.0;
         double centerZ  = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int    worldBot = mc.world.getBottomY();
-        int    worldTop = worldBot + mc.world.getHeight();
-        Box beamBox = new Box(
+        int    worldBot = mc.level.getMinY();
+        int    worldTop = worldBot + mc.level.getHeight();
+        AABB beamBox = new AABB(
             centerX - beamSize, worldBot, centerZ - beamSize,
             centerX + beamSize, worldTop, centerZ + beamSize);
         event.renderer.box(beamBox, withAlpha(color, 80), color, ShapeMode.Both, 0);
         for (int i = 1; i <= 2; i++) {
             double exp   = beamSize * i * 1.5;
             int    alpha = Math.max(4, 30 / i);
-            Box bloom = new Box(
+            AABB bloom = new AABB(
                 centerX - beamSize - exp, worldBot, centerZ - beamSize - exp,
                 centerX + beamSize + exp, worldTop, centerZ + beamSize + exp);
             event.renderer.box(bloom, withAlpha(color, alpha), withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
 
-    private void renderGuardianBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
-        if (mc.world == null) return;
+    private void renderGuardianBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
+        if (mc.level == null) return;
 
         double cx = (anchorBox.minX + anchorBox.maxX) / 2.0;
         double cz = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int worldBot = mc.world.getBottomY();
-        int worldTop = worldBot + mc.world.getHeight();
+        int worldBot = mc.level.getMinY();
+        int worldTop = worldBot + mc.level.getHeight();
 
         double radius  = guardianBeamRadius.get();
         int    strands = guardianStrands.get();
@@ -680,7 +677,7 @@ public class LootLens extends Module {
         double rotationRad = (System.currentTimeMillis() % (long)(6000.0 / speed))
                              / (6000.0 / speed) * Math.PI * 2.0;
 
-        Vec3d camPos = mc.gameRenderer.getCamera().getPos();
+        Vec3 camPos = mc.gameRenderer.getMainCamera().position();
         double camX  = camPos.x, camY = camPos.y, camZ = camPos.z;
 
         float r       = color.r / 255f;
@@ -688,58 +685,35 @@ public class LootLens extends Module {
         float b       = color.b / 255f;
         float strandA = guardianStrandAlpha.get() / 255f;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableCull();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
-        MatrixStack matrices = new MatrixStack();
-        matrices.push();
 
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buf = tessellator.begin(
-            VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
-
-        org.joml.Matrix4f matrix = matrices.peek().getPositionMatrix();
-
-        double relCx  = cx      - camX;
-        double relCz  = cz      - camZ;
-        double relBot = worldBot - camY;
-        double relTop = worldTop - camY;
 
         for (int i = 0; i < strands; i++) {
             double angle = rotationRad + (Math.PI * 2.0 / strands) * i;
             double cos   = Math.cos(angle);
             double sin   = Math.sin(angle);
 
-            double lx = relCx + cos * radius, lz = relCz + sin * radius;
-            double rx = relCx - cos * radius, rz = relCz - sin * radius;
+            double lx = cx + cos * radius, lz = cz + sin * radius;
+            double rx = cx - cos * radius, rz = cz - sin * radius;
 
-            float lxf = (float) lx, lzf = (float) lz;
-            float rxf = (float) rx, rzf = (float) rz;
-            float botF = (float) relBot, topF = (float) relTop;
 
-            buf.vertex(matrix, lxf, botF, lzf).color(r, g, b, strandA);
-            buf.vertex(matrix, rxf, botF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, lxf, topF, lzf).color(r, g, b, strandA);
 
-            buf.vertex(matrix, rxf, botF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, rxf, topF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, lxf, topF, lzf).color(r, g, b, strandA);
+
+            event.renderer.quad(lx, worldBot, lz, rx, worldBot, rz,
+                rx, worldTop, rz, lx, worldTop, lz,
+                withAlpha(color, Math.round(strandA * 255)));
+
         }
 
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        matrices.pop();
 
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
+
+
+
 
         int coreAlpha = guardianCoreAlpha.get();
         if (coreAlpha > 0) {
             double coreR = radius * 0.25;
-            Box coreBox = new Box(
+            AABB coreBox = new AABB(
                 cx - coreR, worldBot, cz - coreR,
                 cx + coreR, worldTop, cz + coreR);
             event.renderer.box(coreBox,
@@ -753,7 +727,7 @@ public class LootLens extends Module {
             for (int ring = 1; ring <= 2; ring++) {
                 double expansion = glowR * ring;
                 int    alpha     = Math.max(4, 22 / ring);
-                Box bloomBox = new Box(
+                AABB bloomBox = new AABB(
                     cx - radius - expansion, worldBot, cz - radius - expansion,
                     cx + radius + expansion, worldTop, cz + radius + expansion);
                 event.renderer.box(bloomBox,
@@ -768,27 +742,27 @@ public class LootLens extends Module {
         return new SettingColor(color.r, color.g, color.b, Math.min(255, Math.max(0, alpha)));
     }
 
-    private Box createPaddedBox(BlockPos pos) {
+    private AABB createPaddedBox(BlockPos pos) {
         double p = 0.0625;
-        return new Box(pos.getX()+p, pos.getY()+p, pos.getZ()+p,
+        return new AABB(pos.getX()+p, pos.getY()+p, pos.getZ()+p,
                        pos.getX()+1-p, pos.getY()+1-p, pos.getZ()+1-p);
     }
 
-    private Box createShulkerBox(BlockPos pos, BlockState state) {
+    private AABB createShulkerBox(BlockPos pos, BlockState state) {
         try {
-            Box shape = state.getOutlineShape(mc.world, pos).getBoundingBox(); double p = 0.5 / 16.0;
-            return new Box(pos.getX()+shape.minX-p, pos.getY()+shape.minY-p, pos.getZ()+shape.minZ-p,
+            AABB shape = state.getShape(mc.level, pos).bounds(); double p = 0.5 / 16.0;
+            return new AABB(pos.getX()+shape.minX-p, pos.getY()+shape.minY-p, pos.getZ()+shape.minZ-p,
                            pos.getX()+shape.maxX+p, pos.getY()+shape.maxY+p, pos.getZ()+shape.maxZ+p);
         } catch (Exception ignored) { return createPaddedBox(pos); }
     }
 
-    private Box createPaddedDoubleChestBox(BlockPos pos1, BlockPos pos2) {
+    private AABB createPaddedDoubleChestBox(BlockPos pos1, BlockPos pos2) {
         double p = 0.0625;
         double minX = Math.min(pos1.getX(), pos2.getX()), minY = Math.min(pos1.getY(), pos2.getY()),
                minZ = Math.min(pos1.getZ(), pos2.getZ());
         double maxX = Math.max(pos1.getX(), pos2.getX())+1, maxY = Math.max(pos1.getY(), pos2.getY())+1,
                maxZ = Math.max(pos1.getZ(), pos2.getZ())+1;
-        return new Box(minX+p, minY+p, minZ+p, maxX-p, maxY-p, maxZ-p);
+        return new AABB(minX+p, minY+p, minZ+p, maxX-p, maxY-p, maxZ-p);
     }
 
     private boolean validateBlockType(Block block, StorageType type) {
@@ -824,7 +798,7 @@ public class LootLens extends Module {
     }
 
     public int getDoubleChestCount() {
-        if (mc.world == null) return 0;
+        if (mc.level == null) return 0;
         Set<BlockPos> counted = new HashSet<>();
         int count = 0;
         for (Map.Entry<BlockPos, StorageType> entry : containers.entrySet()) {
@@ -832,10 +806,10 @@ public class LootLens extends Module {
             StorageType type = entry.getValue();
             if (type != StorageType.CHEST && type != StorageType.TRAPPED_CHEST) continue;
             if (counted.contains(pos)) continue;
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             if (!(state.getBlock() instanceof ChestBlock)) continue;
             try {
-                ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+                ChestType chestType = state.getValue(ChestBlock.TYPE);
                 if (chestType == ChestType.SINGLE) continue;
                 BlockPos adjacent = findAdjacentChest(pos, false);
                 if (adjacent == null) continue;
@@ -865,5 +839,5 @@ public class LootLens extends Module {
         UTILITY, DECORATIVE
     }
 
-    private record BeamData(Box box, SettingColor color) {}
+    private record BeamData(AABB box, SettingColor color) {}
 }

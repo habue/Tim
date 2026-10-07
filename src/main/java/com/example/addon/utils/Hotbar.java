@@ -1,11 +1,10 @@
 package com.example.addon.utils;
 
 import meteordevelopment.meteorclient.utils.player.InvUtils;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 
@@ -13,7 +12,7 @@ import java.util.function.ToIntFunction;
  * Handles common hotbar searches and slot changes.
  */
 public final class Hotbar {
-    private static final MinecraftClient client = MinecraftClient.getInstance();
+    private static final Minecraft client = Minecraft.getInstance();
 
     private Hotbar() {}
 
@@ -24,7 +23,7 @@ public final class Hotbar {
      * @return matching zero-based hotbar slot, or -1 when unavailable
      */
     public static int find(Item item) {
-        return find(stack -> stack.isOf(item));
+        return find(stack -> stack.is(item));
     }
 
     /**
@@ -119,7 +118,7 @@ public final class Hotbar {
 
         for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = stack(slot);
-            if (stack.isOf(item)) count += stack.getCount();
+            if (stack.is(item)) count += stack.getCount();
         }
 
         return count;
@@ -131,7 +130,7 @@ public final class Hotbar {
      * @return zero-based selected slot
      */
     public static int selected() {
-        return client.player.getInventory().selectedSlot;
+        return client.player.getInventory().getSelectedSlot();
     }
 
     /**
@@ -141,7 +140,7 @@ public final class Hotbar {
      * @return item stack stored in the slot
      */
     public static ItemStack stack(int slot) {
-        return client.player.getInventory().getStack(slot);
+        return client.player.getInventory().getItem(slot);
     }
 
     /**
@@ -159,8 +158,8 @@ public final class Hotbar {
      * @param slot zero-based hotbar slot
      */
     public static void sync(int slot) {
-        client.getNetworkHandler().sendPacket(
-            new UpdateSelectedSlotC2SPacket(slot)
+        client.getConnection().send(
+            new ServerboundSetCarriedItemPacket(slot)
         );
     }
 

@@ -14,7 +14,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.example.addon.Tim;
 import com.mojang.blaze3d.systems.RenderSystem;
-
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.BlockUpdateEvent;
@@ -33,39 +37,32 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.BedBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.ChestBlock;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.block.enums.BedPart;
-import net.minecraft.block.enums.ChestType;
-import net.minecraft.client.gl.ShaderProgramKeys;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.decoration.GlowItemFrameEntity;
-import net.minecraft.entity.decoration.ItemFrameEntity;
-import net.minecraft.entity.vehicle.ChestMinecartEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.decoration.GlowItemFrame;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.vehicle.minecart.MinecartChest;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public class Raidar extends Module {
 
@@ -270,9 +267,9 @@ public class Raidar extends Module {
     private final Set<ChunkPos> dirtyChunks = new HashSet<>();
 
     private final Map<UUID, StackedState> knownStackedMinecarts = new HashMap<>();
-    private final Map<Vec3d, ItemFrameEntity> itemFrameEntities = new HashMap<>();
-    private final Map<Vec3d, GlowItemFrameEntity> glowItemFrameEntities = new HashMap<>();
-    private final Set<Vec3d> notifiedItemFrames = new HashSet<>();
+    private final Map<Vec3, ItemFrame> itemFrameEntities = new HashMap<>();
+    private final Map<Vec3, GlowItemFrame> glowItemFrameEntities = new HashMap<>();
+    private final Set<Vec3> notifiedItemFrames = new HashSet<>();
     private final Map<BlockPos, DyeColor> bedPositions = new HashMap<>();
 
     private boolean stashesDirty = false;
@@ -313,14 +310,14 @@ public class Raidar extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (!dirtyChunks.isEmpty()) { 
             scannedChunks.removeAll(dirtyChunks); 
             dirtyChunks.clear(); 
         }
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         scanNewChunks(playerPos.getX() >> 4, playerPos.getZ() >> 4);
         scanChestMinecarts();
         scanItemFrames();
@@ -376,7 +373,7 @@ public class Raidar extends Module {
         ChunkPos cp = new ChunkPos(cx, cz);
         if (scannedChunks.contains(cp)) return false;
 
-        WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(cx, cz);
+        LevelChunk chunk = mc.level.getChunkSource().getChunkNow(cx, cz);
         if (chunk != null) {
             scanChunk(chunk);
             scannedChunks.add(cp);
@@ -385,25 +382,25 @@ public class Raidar extends Module {
         return false;
     }
 
-    private void scanChunk(WorldChunk chunk) {
-        ChunkSection[] sections = chunk.getSectionArray();
-        int chunkX = chunk.getPos().x << 4;
-        int chunkZ = chunk.getPos().z << 4;
+    private void scanChunk(LevelChunk chunk) {
+        LevelChunkSection[] sections = chunk.getSections();
+        int chunkX = chunk.getPos().x() << 4;
+        int chunkZ = chunk.getPos().z() << 4;
 
         for (int i = 0; i < sections.length; i++) {
-            ChunkSection section = sections[i];
-            if (section == null || section.isEmpty()) continue;
+            LevelChunkSection section = sections[i];
+            if (section == null || section.hasOnlyAir()) continue;
 
             boolean hasStash = false;
             try {
-                hasStash = section.hasAny(state -> classifyBlock(state.getBlock()) != null);
+                hasStash = section.maybeHas(state -> classifyBlock(state.getBlock()) != null);
             } catch (Exception e) {
                 hasStash = false;
             }
 
             if (!hasStash) continue;
 
-            int sectionMinY = (chunk.getBottomSectionCoord() + i) * 16;
+            int sectionMinY = (chunk.getMinSectionY() + i) * 16;
             for (int x = 0; x < 16; x++) {
                 for (int y = 0; y < 16; y++) {
                     int worldY = sectionMinY + y;
@@ -431,7 +428,7 @@ public class Raidar extends Module {
         if (scanDecorative.get() && (block == Blocks.BREWING_STAND || block == Blocks.CRAFTER || block == Blocks.CHISELED_BOOKSHELF || block == Blocks.DECORATED_POT)) return StashType.DECORATIVE;
         
         if (scanObsidian.get() && block == Blocks.OBSIDIAN) {
-            if (mc.world != null && mc.world.getRegistryKey().equals(World.NETHER)) {
+            if (mc.level != null && mc.level.dimension().equals(Level.NETHER)) {
                 return StashType.OBSIDIAN;
             }
         }
@@ -440,26 +437,26 @@ public class Raidar extends Module {
 
     private void scanChestMinecarts() {
         if (!scanChestMinecarts.get()) return;
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int scanRange = range.get();
-        Box searchBox = new Box(
+        AABB searchBox = new AABB(
             playerPos.getX() - scanRange, playerPos.getY() - scanRange, playerPos.getZ() - scanRange,
             playerPos.getX() + scanRange, playerPos.getY() + scanRange, playerPos.getZ() + scanRange
         );
 
-        List<ChestMinecartEntity> minecarts = mc.world.getEntitiesByClass(ChestMinecartEntity.class, searchBox, e -> true);
-        List<Set<ChestMinecartEntity>> clusters = new ArrayList<>();
-        Set<ChestMinecartEntity> assigned = new HashSet<>();
+        List<MinecartChest> minecarts = mc.level.getEntitiesOfClass(MinecartChest.class, searchBox, e -> true);
+        List<Set<MinecartChest>> clusters = new ArrayList<>();
+        Set<MinecartChest> assigned = new HashSet<>();
         
-        for (ChestMinecartEntity m1 : minecarts) {
+        for (MinecartChest m1 : minecarts) {
             if (assigned.contains(m1)) continue;
-            Set<ChestMinecartEntity> cluster = new HashSet<>();
+            Set<MinecartChest> cluster = new HashSet<>();
             cluster.add(m1);
             assigned.add(m1);
             
-            for (ChestMinecartEntity m2 : minecarts) {
+            for (MinecartChest m2 : minecarts) {
                 if (assigned.contains(m2)) continue;
-                if (m1.squaredDistanceTo(m2) < 0.5) {
+                if (m1.distanceToSqr(m2) < 0.5) {
                     cluster.add(m2);
                     assigned.add(m2);
                 }
@@ -469,21 +466,21 @@ public class Raidar extends Module {
 
         Set<UUID> seenClusterIds = new HashSet<>();
 
-        for (Set<ChestMinecartEntity> cluster : clusters) {
+        for (Set<MinecartChest> cluster : clusters) {
             if (cluster.isEmpty()) continue;
             
             int count = cluster.size();
-            Vec3d centroid = new Vec3d(0, 0, 0);
+            Vec3 centroid = new Vec3(0, 0, 0);
             UUID clusterId = null;
             
-            for (ChestMinecartEntity m : cluster) {
-                centroid = centroid.add(m.getPos());
-                if (clusterId == null || m.getUuid().compareTo(clusterId) < 0) {
-                    clusterId = m.getUuid();
+            for (MinecartChest m : cluster) {
+                centroid = centroid.add(m.position());
+                if (clusterId == null || m.getUUID().compareTo(clusterId) < 0) {
+                    clusterId = m.getUUID();
                 }
             }
-            centroid = centroid.multiply(1.0 / count);
-            BlockPos bpos = BlockPos.ofFloored(centroid);
+            centroid = centroid.scale(1.0 / count);
+            BlockPos bpos = BlockPos.containing(centroid);
             
             seenClusterIds.add(clusterId);
             updateStackedMinecartState(clusterId, bpos, centroid, count);
@@ -508,7 +505,7 @@ public class Raidar extends Module {
         }
     }
 
-    private void updateStackedMinecartState(UUID id, BlockPos bpos, Vec3d centroid, int count) {
+    private void updateStackedMinecartState(UUID id, BlockPos bpos, Vec3 centroid, int count) {
         final int entryThreshold = stackedMinecartThreshold.get();
         final int exitThreshold  = Math.max(1, entryThreshold - 1);
 
@@ -533,7 +530,7 @@ public class Raidar extends Module {
                     s.confirmedCount = count;
                     if (notification.get() && mc.player != null) {
                         info("§dStacked minecarts detected! §f%d§d minecarts at one position.", count);
-                        mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 0.5f);
+                        mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 0.5f);
                     }
                 }
             } else {
@@ -556,26 +553,26 @@ public class Raidar extends Module {
 
     private void scanItemFrames() {
         if (!scanItemFramesSetting.get()) return;
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int scanRange = range.get();
-        Box searchBox = new Box(
+        AABB searchBox = new AABB(
             playerPos.getX() - scanRange, playerPos.getY() - scanRange, playerPos.getZ() - scanRange,
             playerPos.getX() + scanRange, playerPos.getY() + scanRange, playerPos.getZ() + scanRange
         );
-        Set<Vec3d> currentFramePositions = new HashSet<>();
-        for (ItemFrameEntity frame : mc.world.getEntitiesByClass(ItemFrameEntity.class, searchBox, entity -> true)) {
-            ItemStack heldStack = frame.getHeldItemStack();
+        Set<Vec3> currentFramePositions = new HashSet<>();
+        for (ItemFrame frame : mc.level.getEntitiesOfClass(ItemFrame.class, searchBox, entity -> true)) {
+            ItemStack heldStack = frame.getItem();
             if (heldStack.isEmpty()) continue;
             boolean isShulker = heldStack.getItem() instanceof BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock;
             boolean isCustom  = customItems.get().contains(heldStack.getItem());
             if (!isShulker && !isCustom) continue;
-            Vec3d pos = frame.getPos(); currentFramePositions.add(pos);
-            if (frame instanceof GlowItemFrameEntity glow) glowItemFrameEntities.put(pos, glow);
+            Vec3 pos = frame.position(); currentFramePositions.add(pos);
+            if (frame instanceof GlowItemFrame glow) glowItemFrameEntities.put(pos, glow);
             else itemFrameEntities.put(pos, frame);
             if (notifiedItemFrames.add(pos) && notification.get()) {
                 if (isShulker) info("Shulker found in item frame!");
                 else           info("Tracked item found in item frame!");
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
             }
         }
         itemFrameEntities.entrySet().removeIf(e -> !currentFramePositions.contains(e.getKey()));
@@ -584,10 +581,10 @@ public class Raidar extends Module {
     }
 
     private void scanDecorativeWorldBlocks() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         if (!scanBeds.get()) return;
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int rangeBlocks    = range.get();
         int chunkRange     = (rangeBlocks >> 4) + 1;
         int centerChunkX   = playerPos.getX() >> 4;
@@ -601,16 +598,16 @@ public class Raidar extends Module {
             for (int cz = centerChunkZ - chunkRange; cz <= centerChunkZ + chunkRange; cz++) {
                 int dx = cx - centerChunkX, dz = cz - centerChunkZ;
                 if (dx * dx + dz * dz > chunkRangeSq) continue;
-                WorldChunk chunk = mc.world.getChunkManager().getChunk(cx, cz, ChunkStatus.FULL, false);
+                LevelChunk chunk = mc.level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
                 if (chunk == null) continue;
 
-                ChunkSection[] sections = chunk.getSectionArray();
+                LevelChunkSection[] sections = chunk.getSections();
                 for (int sectionIdx = 0; sectionIdx < sections.length; sectionIdx++) {
-                    ChunkSection section = sections[sectionIdx];
-                    if (section == null || section.isEmpty()) continue;
-                    if (!section.hasAny(state -> state.getBlock() instanceof BedBlock)) continue;
+                    LevelChunkSection section = sections[sectionIdx];
+                    if (section == null || section.hasOnlyAir()) continue;
+                    if (!section.maybeHas(state -> state.getBlock() instanceof BedBlock)) continue;
 
-                    int baseY = chunk.sectionIndexToCoord(sectionIdx) << 4;
+                    int baseY = chunk.getSectionYFromSectionIndex(sectionIdx) << 4;
                     int baseX = cx << 4;
                     int baseZ = cz << 4;
 
@@ -620,14 +617,14 @@ public class Raidar extends Module {
                                 BlockState state = section.getBlockState(lx, ly, lz);
                                 Block block = state.getBlock();
                                 BlockPos pos = new BlockPos(baseX + lx, baseY + ly, baseZ + lz);
-                                if (pos.getSquaredDistance(playerPos) > maxDistSq) continue;
+                                if (pos.distSqr(playerPos) > maxDistSq) continue;
 
                                 if (block instanceof BedBlock) {
                                     try {
-                                        if (state.get(BedBlock.PART) != BedPart.HEAD) continue;
+                                        if (state.getValue(BedBlock.PART) != BedPart.HEAD) continue;
                                     } catch (Exception ignored) { continue; }
                                     DyeColor color = ((BedBlock) block).getColor();
-                                    bedPositions.put(pos.toImmutable(), color);
+                                    bedPositions.put(pos.immutable(), color);
                                 }
                             }
                         }
@@ -671,17 +668,17 @@ public class Raidar extends Module {
             
             Set<BlockPos> component = new HashSet<>();
             Queue<BlockPos> queue = new LinkedList<>();
-            Box structureBox = new Box(startPos);
+            AABB structureBox = new AABB(startPos);
             queue.add(startPos); visited.add(startPos);
             
             while (!queue.isEmpty()) {
                 BlockPos current = queue.poll();
                 component.add(current);
                 for (Direction dir : Direction.values()) {
-                    BlockPos neighbor = current.offset(dir);
+                    BlockPos neighbor = current.relative(dir);
                     if (stashes.get(neighbor) == type && visited.add(neighbor)) {
                         queue.add(neighbor);
-                        structureBox = structureBox.union(new Box(neighbor));
+                        structureBox = structureBox.minmax(new AABB(neighbor));
                     }
                 }
             }
@@ -690,7 +687,7 @@ public class Raidar extends Module {
                 int maxSz = maxObsidianCluster.get();
                 if (maxSz > 0 && component.size() > maxSz) continue;
 
-                if (hasCryingObsidianNearby(structureBox.expand(8.0))) {
+                if (hasCryingObsidianNearby(structureBox.inflate(8.0))) {
                     continue;
                 }
             }
@@ -698,14 +695,14 @@ public class Raidar extends Module {
             BlockPos anchor = componentAnchor(component);
             active.add(anchor);
             
-            StashCluster cluster = new StashCluster(structureBox.expand(0.02), component, type);
+            StashCluster cluster = new StashCluster(structureBox.inflate(0.02), component, type);
             stashClusterMap.put(anchor, cluster);
         }
 
         stashClusterMap.keySet().retainAll(active);
     }
 
-    private boolean hasCryingObsidianNearby(Box searchBox) {
+    private boolean hasCryingObsidianNearby(AABB searchBox) {
         int minX = (int) Math.floor(searchBox.minX);
         int minY = (int) Math.floor(searchBox.minY);
         int minZ = (int) Math.floor(searchBox.minZ);
@@ -713,11 +710,11 @@ public class Raidar extends Module {
         int maxY = (int) Math.ceil(searchBox.maxY);
         int maxZ = (int) Math.ceil(searchBox.maxZ);
         
-        BlockPos.Mutable mutable = new BlockPos.Mutable();
+        BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    if (mc.world.getBlockState(mutable.set(x, y, z)).getBlock() == Blocks.CRYING_OBSIDIAN) {
+                    if (mc.level.getBlockState(mutable.set(x, y, z)).getBlock() == Blocks.CRYING_OBSIDIAN) {
                         return true;
                     }
                 }
@@ -740,17 +737,17 @@ public class Raidar extends Module {
         if (mc.player == null) return;
         double distSq = Math.pow(range.get() + 64, 2);
         
-        stashes.entrySet().removeIf(e -> e.getKey().getSquaredDistance(mc.player.getPos()) > distSq);
-        stashClusterMap.entrySet().removeIf(e -> e.getValue().boundingBox.getCenter().squaredDistanceTo(mc.player.getPos()) > distSq);
+        stashes.entrySet().removeIf(e -> e.getKey().distToCenterSqr(mc.player.position()) > distSq);
+        stashClusterMap.entrySet().removeIf(e -> e.getValue().boundingBox.getCenter().distanceToSqr(mc.player.position()) > distSq);
 
-        int px = mc.player.getBlockPos().getX() >> 4, pz = mc.player.getBlockPos().getZ() >> 4;
+        int px = mc.player.blockPosition().getX() >> 4, pz = mc.player.blockPosition().getZ() >> 4;
         int rSq = (range.get() >> 4) * (range.get() >> 4);
-        scannedChunks.removeIf(cp -> (cp.x - px) * (cp.x - px) + (cp.z - pz) * (cp.z - pz) > rSq);
+        scannedChunks.removeIf(cp -> (cp.x() - px) * (cp.x() - px) + (cp.z() - pz) * (cp.z() - pz) > rSq);
     }
 
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
         
         StashType type = classifyBlock(event.newState.getBlock());
         if (type != null) { 
@@ -768,7 +765,7 @@ public class Raidar extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         List<BeamData> beamsToRender = new ArrayList<>();
         Set<BlockPos> renderedDoubleChests = new HashSet<>();
@@ -780,34 +777,34 @@ public class Raidar extends Module {
             for (BlockPos pos : cluster.blocks) {
                 if (renderedDoubleChests.contains(pos)) continue;
 
-                BlockState state = mc.world.getBlockState(pos);
-                Box renderBox;
+                BlockState state = mc.level.getBlockState(pos);
+                AABB renderBox;
 
                 if (cluster.type == StashType.CHEST && state.getBlock() instanceof ChestBlock) {
                     try {
-                        ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+                        ChestType chestType = state.getValue(ChestBlock.TYPE);
                         if (chestType != ChestType.SINGLE) {
-                            Direction facing = state.get(ChestBlock.FACING);
-                            Direction neighborDir = chestType == ChestType.LEFT ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
-                            BlockPos neighborPos = pos.offset(neighborDir);
+                            Direction facing = state.getValue(ChestBlock.FACING);
+                            Direction neighborDir = chestType == ChestType.LEFT ? facing.getClockWise() : facing.getCounterClockWise();
+                            BlockPos neighborPos = pos.relative(neighborDir);
                             if (cluster.blocks.contains(neighborPos)) {
                                 renderBox = createPaddedDoubleChestBox(pos, neighborPos);
                                 renderedDoubleChests.add(neighborPos);
                             } else {
-                                renderBox = new Box(pos).expand(0.02);
+                                renderBox = new AABB(pos).inflate(0.02);
                             }
                         } else {
-                            renderBox = new Box(pos).expand(0.02);
+                            renderBox = new AABB(pos).inflate(0.02);
                         }
                     } catch (Exception e) {
-                        renderBox = new Box(pos).expand(0.02);
+                        renderBox = new AABB(pos).inflate(0.02);
                     }
                 } else {
-                    renderBox = new Box(pos).expand(0.02);
+                    renderBox = new AABB(pos).inflate(0.02);
                 }
 
                 if (highlightStyle.get() == HighlightStyle.SPECTRAL) {
-                    event.renderer.box(renderBox.expand(spectralExpand.get()), withAlpha(color, spectralFillAlpha.get()), withAlpha(color, spectralLineAlpha.get()), ShapeMode.Both, 0);
+                    event.renderer.box(renderBox.inflate(spectralExpand.get()), withAlpha(color, spectralFillAlpha.get()), withAlpha(color, spectralLineAlpha.get()), ShapeMode.Both, 0);
                 } else if (highlightStyle.get() == HighlightStyle.PULSE) {
                     renderPulseBox(event, renderBox, color);
                 } else {
@@ -839,10 +836,10 @@ public class Raidar extends Module {
             for (Map.Entry<UUID, StackedState> entry : knownStackedMinecarts.entrySet()) {
                 StackedState state = entry.getValue();
                 if (state.lastBlockPos == null) continue;
-                List<ChestMinecartEntity> minecarts = mc.world.getEntitiesByClass(
-                    ChestMinecartEntity.class, new Box(state.lastBlockPos), entity -> true);
+                List<MinecartChest> minecarts = mc.level.getEntitiesOfClass(
+                    MinecartChest.class, new AABB(state.lastBlockPos), entity -> true);
                 
-                Box renderBox = minecarts.isEmpty() ? new Box(state.lastBlockPos).expand(0.0625) : getMinecartChestBox(minecarts.get(0));
+                AABB renderBox = minecarts.isEmpty() ? new AABB(state.lastBlockPos).inflate(0.0625) : getMinecartChestBox(minecarts.get(0));
                 SettingColor color = state.stacked ? stackedMinecartColor.get() : chestMinecartColor.get();
 
                 if (highlightStyle.get() == HighlightStyle.SPECTRAL) {
@@ -872,25 +869,25 @@ public class Raidar extends Module {
     private void renderItemFrames(Render3DEvent event, List<BeamData> beams) {
         if (!scanItemFramesSetting.get()) return;
         SettingColor color = itemFrameColor.get();
-        for (ItemFrameEntity frame : itemFrameEntities.values()) {
+        for (ItemFrame frame : itemFrameEntities.values()) {
             if (frame == null || frame.isRemoved()) continue;
             renderEntityBox(event, frame.getBoundingBox(), color);
-            ItemStack held = frame.getHeldItemStack();
+            ItemStack held = frame.getItem();
             if (held.getItem() instanceof BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) {
                 if (!beamsHidden) beams.add(new BeamData(frame.getBoundingBox(), color));
             }
         }
-        for (GlowItemFrameEntity frame : glowItemFrameEntities.values()) {
+        for (GlowItemFrame frame : glowItemFrameEntities.values()) {
             if (frame == null || frame.isRemoved()) continue;
             renderEntityBox(event, frame.getBoundingBox(), color);
-            ItemStack held = frame.getHeldItemStack();
+            ItemStack held = frame.getItem();
             if (held.getItem() instanceof BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) {
                 if (!beamsHidden) beams.add(new BeamData(frame.getBoundingBox(), color));
             }
         }
     }
 
-    private void renderEntityBox(Render3DEvent event, Box box, SettingColor color) {
+    private void renderEntityBox(Render3DEvent event, AABB box, SettingColor color) {
         if (highlightStyle.get() == HighlightStyle.SPECTRAL) {
             event.renderer.box(box, withAlpha(color, spectralFillAlpha.get()), withAlpha(color, spectralLineAlpha.get()), ShapeMode.Both, 0);
         } else if (highlightStyle.get() == HighlightStyle.PULSE) {
@@ -902,30 +899,30 @@ public class Raidar extends Module {
     }
 
     private void renderBeds(Render3DEvent event) {
-        if (mc.world == null) return;
+        if (mc.level == null) return;
         int fill = bedFillAlpha.get();
 
         for (Map.Entry<BlockPos, DyeColor> entry : bedPositions.entrySet()) {
             BlockPos pos = entry.getKey();
             DyeColor dye = entry.getValue();
 
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             if (!(state.getBlock() instanceof BedBlock)) continue;
 
-            Direction facing = state.get(BedBlock.FACING);
-            BlockPos footPos = pos.offset(facing.getOpposite());
-            BlockState footState = mc.world.getBlockState(footPos);
+            Direction facing = state.getValue(BedBlock.FACING);
+            BlockPos footPos = pos.relative(facing.getOpposite());
+            BlockState footState = mc.level.getBlockState(footPos);
             boolean hasFootBlock = footState.getBlock() instanceof BedBlock;
 
-            Box renderBox;
+            AABB renderBox;
             if (hasFootBlock) {
                 double minX = Math.min(pos.getX(), footPos.getX());
                 double minZ = Math.min(pos.getZ(), footPos.getZ());
                 double maxX = Math.max(pos.getX(), footPos.getX()) + 1.0;
                 double maxZ = Math.max(pos.getZ(), footPos.getZ()) + 1.0;
-                renderBox = new Box(minX + 0.0625, pos.getY(), minZ + 0.0625, maxX - 0.0625, pos.getY() + 0.5625, maxZ - 0.0625);
+                renderBox = new AABB(minX + 0.0625, pos.getY(), minZ + 0.0625, maxX - 0.0625, pos.getY() + 0.5625, maxZ - 0.0625);
             } else {
-                renderBox = new Box(pos.getX() + 0.0625, pos.getY(), pos.getZ() + 0.0625, pos.getX() + 0.9375, pos.getY() + 0.5625, pos.getZ() + 0.9375);
+                renderBox = new AABB(pos.getX() + 0.0625, pos.getY(), pos.getZ() + 0.0625, pos.getX() + 0.9375, pos.getY() + 0.5625, pos.getZ() + 0.9375);
             }
 
             SettingColor color = dyeToColor(dye, 200);
@@ -941,13 +938,13 @@ public class Raidar extends Module {
         }
     }
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get(); 
         double spread = glowSpread.get(); 
         int baseAlpha = glowBaseAlpha.get();
         for (int i = layers; i >= 1; i--) {
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i-1) / layers)));
-            event.renderer.box(box.expand(spread * i), withAlpha(color, layerAlpha), withAlpha(color, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(spread * i), withAlpha(color, layerAlpha), withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
 
@@ -969,7 +966,7 @@ public class Raidar extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -978,7 +975,7 @@ public class Raidar extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion), withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(expansion), withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
     }
@@ -1007,22 +1004,22 @@ public class Raidar extends Module {
         }
     }
 
-    private void renderBoxBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
+    private void renderBoxBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
         double beamSize = Math.max(0.01, beamWidth.get() / 100.0);
         double centerX = (anchorBox.minX + anchorBox.maxX) / 2.0;
         double centerZ = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int worldBot = mc.world.getBottomY(), worldTop = worldBot + mc.world.getHeight();
-        Box beamBox = new Box(centerX - beamSize, worldBot, centerZ - beamSize, centerX + beamSize, worldTop, centerZ + beamSize);
+        int worldBot = mc.level.getMinY(), worldTop = worldBot + mc.level.getHeight();
+        AABB beamBox = new AABB(centerX - beamSize, worldBot, centerZ - beamSize, centerX + beamSize, worldTop, centerZ + beamSize);
         renderGlowLayers(event, beamBox, color);
         event.renderer.box(beamBox, withAlpha(color, 60), color, ShapeMode.Both, 0);
     }
 
-    private void renderGuardianBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
-        if (mc.world == null) return;
+    private void renderGuardianBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
+        if (mc.level == null) return;
         double cx = (anchorBox.minX + anchorBox.maxX) / 2.0;
         double cz = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int worldBot = mc.world.getBottomY();
-        int worldTop = worldBot + mc.world.getHeight();
+        int worldBot = mc.level.getMinY();
+        int worldTop = worldBot + mc.level.getHeight();
 
         double radius = Math.max(0.01, guardianRadius.get());
         int strands = guardianStrands.get();
@@ -1030,7 +1027,7 @@ public class Raidar extends Module {
 
         double rotationRad = (System.currentTimeMillis() % (long)(6000.0 / speed)) / (6000.0 / speed) * Math.PI * 2.0;
 
-        Vec3d camPos = mc.gameRenderer.getCamera().getPos();
+        Vec3 camPos = mc.gameRenderer.getMainCamera().position();
         double camX = camPos.x, camY = camPos.y, camZ = camPos.z;
 
         float r = color.r / 255f;
@@ -1038,71 +1035,53 @@ public class Raidar extends Module {
         float b = color.b / 255f;
         float strandA = 160 / 255f;
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableCull();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
 
-        MatrixStack matrices = new MatrixStack();
-        matrices.push();
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buf = tessellator.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
-        org.joml.Matrix4f matrix = matrices.peek().getPositionMatrix();
 
-        double relCx = cx - camX, relCz = cz - camZ;
-        double relBot = worldBot - camY, relTop = worldTop - camY;
 
         for (int i = 0; i < strands; i++) {
             double angle = rotationRad + (Math.PI * 2.0 / strands) * i;
             double cos = Math.cos(angle), sin = Math.sin(angle);
-            double lx = relCx + cos * radius, lz = relCz + sin * radius;
-            double rx = relCx - cos * radius, rz = relCz - sin * radius;
+            double lx = cx + cos * radius, lz = cz + sin * radius;
+            double rx = cx - cos * radius, rz = cz - sin * radius;
 
-            float lxf = (float) lx, lzf = (float) lz;
-            float rxf = (float) rx, rzf = (float) rz;
-            float botF = (float) relBot, topF = (float) relTop;
 
-            buf.vertex(matrix, lxf, botF, lzf).color(r, g, b, strandA);
-            buf.vertex(matrix, rxf, botF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, lxf, topF, lzf).color(r, g, b, strandA);
 
-            buf.vertex(matrix, rxf, botF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, rxf, topF, rzf).color(r, g, b, strandA);
-            buf.vertex(matrix, lxf, topF, lzf).color(r, g, b, strandA);
+
+            event.renderer.quad(lx, worldBot, lz, rx, worldBot, rz,
+                rx, worldTop, rz, lx, worldTop, lz,
+                withAlpha(color, Math.round(strandA * 255)));
+
         }
 
-        BufferRenderer.drawWithGlobalProgram(buf.end());
-        matrices.pop();
 
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
+
+
+
 
         double coreR = radius * 0.25;
-        Box coreBox = new Box(cx - coreR, worldBot, cz - coreR, cx + coreR, worldTop, cz + coreR);
+        AABB coreBox = new AABB(cx - coreR, worldBot, cz - coreR, cx + coreR, worldTop, cz + coreR);
         event.renderer.box(coreBox, withAlpha(color, 90), withAlpha(color, 130), ShapeMode.Both, 0);
     }
 
-    private Box getMinecartChestBox(ChestMinecartEntity minecart) {
-        Box entityBox = minecart.getBoundingBox(); 
+    private AABB getMinecartChestBox(MinecartChest minecart) {
+        AABB entityBox = minecart.getBoundingBox(); 
         double chestSz = 14.0 / 16.0;
-        double xPad = (entityBox.getLengthX() - chestSz) / 2.0;
-        double zPad = (entityBox.getLengthZ() - chestSz) / 2.0;
+        double xPad = (entityBox.getXsize() - chestSz) / 2.0;
+        double zPad = (entityBox.getZsize() - chestSz) / 2.0;
         double minY = entityBox.maxY - (10.0 / 16.0);
         return newBox(entityBox.minX + xPad, minY, entityBox.minZ + zPad,
                       entityBox.maxX - xPad, entityBox.maxY, entityBox.maxZ - zPad);
     }
 
-    private Box newBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
-        return new Box(minX, minY, minZ, maxX, maxY, maxZ);
+    private AABB newBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
-    private Box createPaddedDoubleChestBox(BlockPos pos1, BlockPos pos2) {
+    private AABB createPaddedDoubleChestBox(BlockPos pos1, BlockPos pos2) {
         double p = 0.0625;
         double minX = Math.min(pos1.getX(), pos2.getX()), minY = Math.min(pos1.getY(), pos2.getY()), minZ = Math.min(pos1.getZ(), pos2.getZ());
         double maxX = Math.max(pos1.getX(), pos2.getX())+1, maxY = Math.max(pos1.getY(), pos2.getY())+1, maxZ = Math.max(pos1.getZ(), pos2.getZ())+1;
-        return new Box(minX+p, minY+p, minZ+p, maxX-p, maxY-p, maxZ-p);
+        return new AABB(minX+p, minY+p, minZ+p, maxX-p, maxY-p, maxZ-p);
     }
 
     private SettingColor getStructureColor(StashType type) {
@@ -1126,11 +1105,11 @@ public class Raidar extends Module {
     private enum StashType { CHEST, BARREL, SHULKER, ENDER_CHEST, OBSIDIAN, UTILITY, DECORATIVE }
     
     private static class StashCluster {
-        final Box boundingBox; 
+        final AABB boundingBox; 
         final Set<BlockPos> blocks; 
         final StashType type;
         
-        StashCluster(Box bb, Set<BlockPos> pb, StashType t) {
+        StashCluster(AABB bb, Set<BlockPos> pb, StashType t) {
             this.boundingBox = bb; 
             this.blocks = pb; 
             this.type = t;
@@ -1145,8 +1124,8 @@ public class Raidar extends Module {
         int     exitDebounce    = 0;
         int     missingTicks    = 0;
         BlockPos lastBlockPos   = null;
-        Vec3d   lastCentroid    = null;
+        Vec3   lastCentroid    = null;
     }
     
-    private record BeamData(Box box, SettingColor color) {}
+    private record BeamData(AABB box, SettingColor color) {}
 }

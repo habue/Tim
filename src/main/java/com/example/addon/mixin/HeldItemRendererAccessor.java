@@ -1,28 +1,28 @@
 package com.example.addon.mixin;
 
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.item.HeldItemRenderer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.ItemInHandRenderer;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-@Mixin(HeldItemRenderer.class)
+@Mixin(value = ItemInHandRenderer.class, remap = false)
 public interface HeldItemRendererAccessor {
 
-    @Invoker("renderFirstPersonItem")
+    @Invoker("renderArmWithItem")
     void invokeRenderFirstPersonItem(
-        AbstractClientPlayerEntity player,
+        AbstractClientPlayer player,
         float tickDelta,
         float pitch,
-        Hand hand,
+        InteractionHand hand,
         float swingProgress,
         ItemStack item,
         float equipProgress,
-        MatrixStack matrices,
-        VertexConsumerProvider vertexConsumers,
+        PoseStack matrices,
+        SubmitNodeCollector vertexConsumers,
         int light
     );
 }

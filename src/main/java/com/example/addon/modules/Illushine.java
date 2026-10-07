@@ -24,16 +24,16 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.WireframeEntityRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.mob.Angerable;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.passive.PassiveEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.world.entity.AgeableMob;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.NeutralMob;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class Illushine extends Module {
 
@@ -281,7 +281,7 @@ public class Illushine extends Module {
     public boolean getScaleOtherPlayers() { return scaleOtherPlayers.get(); }
     public double getOtherPlayerScale() { return otherPlayerScale.get(); }
 
-    public double getMobScale(MobEntity mob) {
+    public double getMobScale(Mob mob) {
         MobCategory cat = categorise(mob);
         return switch (cat) {
             case PASSIVE -> passiveScale.get();
@@ -313,14 +313,14 @@ public class Illushine extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         boolean spectral = highlightMode.get() == HighlightMode.Spectral;
 
         Map<Integer, MobCategory> newOutlined = new HashMap<>();
 
-        for (Entity entity : mc.world.getEntities()) {
-            if (!(entity instanceof MobEntity mob)) continue;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof Mob mob)) continue;
             if (ignoredEntities.get().contains(mob.getType())) continue;
             if (mc.player.distanceTo(mob) > range.get()) continue;
 
@@ -359,13 +359,13 @@ public class Illushine extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.world == null || mc.player == null || activelyOutlined.isEmpty()) return;
+        if (mc.level == null || mc.player == null || activelyOutlined.isEmpty()) return;
 
         boolean wireframe = highlightMode.get() == HighlightMode.Wireframe;
 
         for (Map.Entry<Integer, MobCategory> entry : activelyOutlined.entrySet()) {
-            Entity entity = mc.world.getEntityById(entry.getKey());
-            if (!(entity instanceof MobEntity mob)) continue;
+            Entity entity = mc.level.getEntity(entry.getKey());
+            if (!(entity instanceof Mob mob)) continue;
 
             SettingColor color = colorForCategory(entry.getValue());
 
@@ -382,13 +382,13 @@ public class Illushine extends Module {
     // Crosshair
     // ═══════════════════════════════════════════════════════════════════════════
 
-    public void drawCrosshair(DrawContext context) {
+    public void drawCrosshair(GuiGraphicsExtractor context) {
         if (mc.getWindow() == null) return;
-        if (!mc.options.getPerspective().isFirstPerson()) return;
-        if (mc.currentScreen != null) return;
+        if (!mc.options.getCameraType().isFirstPerson()) return;
+        if (mc.screen != null) return;
 
-        int cx = mc.getWindow().getScaledWidth()  / 2;
-        int cy = mc.getWindow().getScaledHeight() / 2;
+        int cx = mc.getWindow().getGuiScaledWidth()  / 2;
+        int cy = mc.getWindow().getGuiScaledHeight() / 2;
 
         switch (crosshairMode.get()) {
             case WhiteDot -> context.fill(cx - 1, cy - 1, cx + 1, cy + 1, 0xFFFFFFFF);
@@ -398,7 +398,7 @@ public class Illushine extends Module {
         }
     }
 
-    private void drawNormalCrosshair(DrawContext context, int cx, int cy) {
+    private void drawNormalCrosshair(GuiGraphicsExtractor context, int cx, int cy) {
         int arm = crosshairSize.get();
         int gap = crosshairGap.get();
         int th  = crosshairThickness.get();
@@ -413,39 +413,39 @@ public class Illushine extends Module {
         context.fill(cx - halfU,     cy + gap,       cx + halfD, cy + arm + gap, col);
     }
 
-    private void drawCustomItemCrosshair(DrawContext context, int cx, int cy) {
+    private void drawCustomItemCrosshair(GuiGraphicsExtractor context, int cx, int cy) {
         Item item = crosshairItem.get();
         if (item == null) item = Items.DIAMOND;
         ItemStack stack = new ItemStack(item);
 
         float scale = crosshairItemScale.get().floatValue();
-        context.getMatrices().push();
-        context.getMatrices().translate(cx - (8.0f * scale), cy - (8.0f * scale), 230.0F);
-        context.getMatrices().scale(scale, scale, 1.0F);
-        context.drawItem(stack, 0, 0);
-        context.getMatrices().pop();
+        context.pose().pushMatrix();
+        context.pose().translate(cx - (8.0f * scale), cy - (8.0f * scale));
+        context.pose().scale(scale, scale);
+        context.item(stack, 0, 0);
+        context.pose().popMatrix();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Categorisation
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private MobCategory categorise(MobEntity mob) {
+    private MobCategory categorise(Mob mob) {
         if (mob.getType() == EntityType.PIGLIN && mob.isBaby()) return MobCategory.PASSIVE;
 
         if (mob.getType() == EntityType.SPIDER || mob.getType() == EntityType.CAVE_SPIDER) {
-            long time = mc.world.getTimeOfDay() % 24000;
+            long time = com.example.addon.utils.PortCompat.dayTime() % 24000;
             boolean isDay = time < 13000;
-            boolean canSeeSky = mc.world.isSkyVisible(mob.getBlockPos());
+            boolean canSeeSky = mc.level.canSeeSky(mob.blockPosition());
             return (isDay && canSeeSky) ? MobCategory.NEUTRAL : MobCategory.HOSTILE;
         }
 
         MobCategory override = CATEGORY_OVERRIDES.get(mob.getType());
         if (override != null) return override;
 
-        if (mob instanceof HostileEntity) return MobCategory.HOSTILE;
-        if (mob instanceof Angerable)     return MobCategory.NEUTRAL;
-        if (mob instanceof PassiveEntity) return MobCategory.PASSIVE;
+        if (mob instanceof Monster) return MobCategory.HOSTILE;
+        if (mob instanceof NeutralMob)     return MobCategory.NEUTRAL;
+        if (mob instanceof AgeableMob) return MobCategory.PASSIVE;
         return MobCategory.NEUTRAL;
     }
 

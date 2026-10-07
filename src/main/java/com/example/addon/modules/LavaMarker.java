@@ -26,16 +26,16 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.ChunkSection;
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.AABB;
 
 /**
  * LavaMarker — highlights fully-flowed lava falls in the Nether.
@@ -210,7 +210,7 @@ public class LavaMarker extends Module {
     @Override
     public void onActivate() {
         clearData();
-        if (mc.world != null) lastDimension = mc.world.getRegistryKey().getValue().toString();
+        if (mc.level != null) lastDimension = mc.level.dimension().identifier().toString();
     }
 
     @Override
@@ -230,9 +230,9 @@ public class LavaMarker extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        String dim = mc.world.getRegistryKey().getValue().toString();
+        String dim = mc.level.dimension().identifier().toString();
         if (!dim.equals("minecraft:the_nether")) {
             if (!fallsByChunk.isEmpty()) clearData();
             return;
@@ -242,7 +242,7 @@ public class LavaMarker extends Module {
             clearData();
         }
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int radius = chunkRadius.get();
         int pX = playerPos.getX() >> 4;
         int pZ = playerPos.getZ() >> 4;
@@ -255,13 +255,13 @@ public class LavaMarker extends Module {
         for (int x = -radius; x <= radius; x++) {
             for (int z = -radius; z <= radius; z++) {
                 ChunkPos cp = new ChunkPos(pX + x, pZ + z);
-                if (!scannedChunks.contains(cp) && mc.world.getChunkManager().isChunkLoaded(cp.x, cp.z)) {
+                if (!scannedChunks.contains(cp) && mc.level.getChunkSource().hasChunk(cp.x(), cp.z())) {
                     todo.add(cp);
                 }
             }
         }
         todo.sort(Comparator.comparingDouble(cp -> {
-            double dx = cp.x - pX, dz = cp.z - pZ;
+            double dx = cp.x() - pX, dz = cp.z() - pZ;
             return dx * dx + dz * dz;
         }));
 
@@ -270,22 +270,22 @@ public class LavaMarker extends Module {
             ChunkPos cp = dirtyChunks.iterator().next();
             dirtyChunks.remove(cp);
             scannedChunks.remove(cp);
-            if (mc.world.getChunkManager().isChunkLoaded(cp.x, cp.z)) {
-                scanChunk(mc.world.getChunk(cp.x, cp.z));
+            if (mc.level.getChunkSource().hasChunk(cp.x(), cp.z())) {
+                scanChunk(mc.level.getChunk(cp.x(), cp.z()));
                 scannedChunks.add(cp);
                 processed++;
             }
         }
         for (ChunkPos cp : todo) {
             if (processed >= 4) break;
-            scanChunk(mc.world.getChunk(cp.x, cp.z));
+            scanChunk(mc.level.getChunk(cp.x(), cp.z()));
             scannedChunks.add(cp);
             processed++;
         }
     }
 
     private boolean isOutOfRange(ChunkPos cp, int pX, int pZ, int radius) {
-        return Math.abs(cp.x - pX) > radius || Math.abs(cp.z - pZ) > radius;
+        return Math.abs(cp.x() - pX) > radius || Math.abs(cp.z() - pZ) > radius;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -294,17 +294,17 @@ public class LavaMarker extends Module {
 
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
-        if (mc.world == null) return;
-        if (!mc.world.getRegistryKey().getValue().toString().equals("minecraft:the_nether")) return;
+        if (mc.level == null) return;
+        if (!mc.level.dimension().identifier().toString().equals("minecraft:the_nether")) return;
         BlockState ns = event.newState;
-        if (ns.isOf(Blocks.LAVA) || ns.isAir()) {
-            ChunkPos cp = new ChunkPos(event.pos);
+        if (ns.is(Blocks.LAVA) || ns.isAir()) {
+            ChunkPos cp = ChunkPos.containing(event.pos);
             scannedChunks.remove(cp);
             dirtyChunks.add(cp);
-            dirtyChunks.add(new ChunkPos(cp.x - 1, cp.z));
-            dirtyChunks.add(new ChunkPos(cp.x + 1, cp.z));
-            dirtyChunks.add(new ChunkPos(cp.x, cp.z - 1));
-            dirtyChunks.add(new ChunkPos(cp.x, cp.z + 1));
+            dirtyChunks.add(new ChunkPos(cp.x() - 1, cp.z()));
+            dirtyChunks.add(new ChunkPos(cp.x() + 1, cp.z()));
+            dirtyChunks.add(new ChunkPos(cp.x(), cp.z() - 1));
+            dirtyChunks.add(new ChunkPos(cp.x(), cp.z() + 1));
         }
     }
 
@@ -312,27 +312,27 @@ public class LavaMarker extends Module {
     // Chunk Scan
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void scanChunk(Chunk chunk) {
-        if (chunk == null || mc.player == null || mc.world == null) return;
+    private void scanChunk(ChunkAccess chunk) {
+        if (chunk == null || mc.player == null || mc.level == null) return;
 
         ChunkPos cp = chunk.getPos();
         int vRadius = verticalRadius.get();
         int playerY = (int) mc.player.getY();
-        int minY = Math.max(mc.world.getBottomY(), playerY - vRadius);
-        int maxY = Math.min(mc.world.getBottomY() + mc.world.getHeight(), playerY + vRadius);
+        int minY = Math.max(mc.level.getMinY(), playerY - vRadius);
+        int maxY = Math.min(mc.level.getMinY() + mc.level.getHeight(), playerY + vRadius);
 
         Set<BlockPos> fallTips = new HashSet<>();
-        ChunkSection[] sections = chunk.getSectionArray();
+        LevelChunkSection[] sections = chunk.getSections();
 
         for (int i = 0; i < sections.length; i++) {
-            ChunkSection section = sections[i];
-            if (section == null || section.isEmpty()) continue;
+            LevelChunkSection section = sections[i];
+            if (section == null || section.hasOnlyAir()) continue;
 
-            int sectionY    = chunk.getBottomSectionCoord() + i;
+            int sectionY    = chunk.getMinSectionY() + i;
             int sectionMinY = sectionY << 4;
             int sectionMaxY = sectionMinY + 15;
             if (sectionMaxY < minY || sectionMinY > maxY) continue;
-            if (!section.hasAny(s -> s.getFluidState().isIn(FluidTags.LAVA))) continue;
+            if (!section.maybeHas(s -> s.getFluidState().is(FluidTags.LAVA))) continue;
 
             for (int x = 0; x < 16; x++) {
                 for (int y = 0; y < 16; y++) {
@@ -341,13 +341,13 @@ public class LavaMarker extends Module {
                         if (worldY < minY || worldY > maxY) continue;
 
                         FluidState fs = section.getBlockState(x, y, z).getFluidState();
-                        if (!fs.isIn(FluidTags.LAVA)) continue;
+                        if (!fs.is(FluidTags.LAVA)) continue;
 
-                        boolean falling = fs.contains(Properties.FALLING) && fs.get(Properties.FALLING);
+                        boolean falling = fs.hasProperty(BlockStateProperties.FALLING) && fs.getValue(BlockStateProperties.FALLING);
                         if (!falling) continue;
 
-                        BlockPos pos = new BlockPos(cp.getStartX() + x, worldY, cp.getStartZ() + z);
-                        if (!isFalling(pos.down())) fallTips.add(pos);
+                        BlockPos pos = new BlockPos(cp.getMinBlockX() + x, worldY, cp.getMinBlockZ() + z);
+                        if (!isFalling(pos.below())) fallTips.add(pos);
                     }
                 }
             }
@@ -371,8 +371,8 @@ public class LavaMarker extends Module {
             if (fallMaxY - fallMinY + 1 < minFallHeight.get()) continue;
 
             for (BlockPos pos : currentFall) {
-                FluidState fs = mc.world.getFluidState(pos);
-                if (fs.isIn(FluidTags.LAVA) && !fs.isStill()) allValidFallBlocks.add(pos);
+                FluidState fs = mc.level.getFluidState(pos);
+                if (fs.is(FluidTags.LAVA) && !fs.isSource()) allValidFallBlocks.add(pos);
             }
         }
 
@@ -381,8 +381,8 @@ public class LavaMarker extends Module {
     }
 
     private boolean isFalling(BlockPos pos) {
-        FluidState fs = mc.world.getFluidState(pos);
-        return fs.isIn(FluidTags.LAVA) && fs.contains(Properties.FALLING) && fs.get(Properties.FALLING);
+        FluidState fs = mc.level.getFluidState(pos);
+        return fs.is(FluidTags.LAVA) && fs.hasProperty(BlockStateProperties.FALLING) && fs.getValue(BlockStateProperties.FALLING);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -401,21 +401,21 @@ public class LavaMarker extends Module {
             result.add(cur);
 
             for (BlockPos nb : new BlockPos[]{
-                cur.north(), cur.south(), cur.east(), cur.west(), cur.down()
+                cur.north(), cur.south(), cur.east(), cur.west(), cur.below()
             }) {
                 if (!visited.contains(nb)
-                        && mc.world.getChunkManager().isChunkLoaded(nb.getX() >> 4, nb.getZ() >> 4)) {
-                    FluidState ns = mc.world.getFluidState(nb);
-                    if (ns.isIn(FluidTags.LAVA) && !ns.isStill()) {
+                        && mc.level.getChunkSource().hasChunk(nb.getX() >> 4, nb.getZ() >> 4)) {
+                    FluidState ns = mc.level.getFluidState(nb);
+                    if (ns.is(FluidTags.LAVA) && !ns.isSource()) {
                         visited.add(nb);
                         queue.add(nb);
                     }
                 }
             }
 
-            BlockPos up = cur.up();
+            BlockPos up = cur.above();
             if (!visited.contains(up)
-                    && mc.world.getChunkManager().isChunkLoaded(up.getX() >> 4, up.getZ() >> 4)) {
+                    && mc.level.getChunkSource().hasChunk(up.getX() >> 4, up.getZ() >> 4)) {
                 if (isFalling(up)) {
                     visited.add(up);
                     queue.add(up);
@@ -430,7 +430,7 @@ public class LavaMarker extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.world == null) return;
+        if (mc.level == null) return;
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         boolean isPulse    = renderMode.get() == RenderMode.PULSE;
@@ -441,14 +441,14 @@ public class LavaMarker extends Module {
             for (BlockPos pos : set) {
                 if (count >= max) return;
 
-                FluidState fs = mc.world.getFluidState(pos);
-                if (!fs.isIn(FluidTags.LAVA)) continue;
-                if (fs.isStill()) continue;
+                FluidState fs = mc.level.getFluidState(pos);
+                if (!fs.is(FluidTags.LAVA)) continue;
+                if (fs.isSource()) continue;
 
-                boolean isBottomBlock = !mc.world.getFluidState(pos.down()).isIn(FluidTags.LAVA);
-                if (isBottomBlock && mc.world.getBlockState(pos.down()).isAir()) continue;
+                boolean isBottomBlock = !mc.level.getFluidState(pos.below()).is(FluidTags.LAVA);
+                if (isBottomBlock && mc.level.getBlockState(pos.below()).isAir()) continue;
 
-                Box box = new Box(pos);
+                AABB box = new AABB(pos);
 
                 if (isSpectral) {
                     int fillAlpha = spectralFillAlpha.get();
@@ -471,7 +471,7 @@ public class LavaMarker extends Module {
     // Bloom & Pulse Rendering
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int    layers    = glowLayers.get();
         double spread    = glowSpread.get();
         int    baseAlpha = glowBaseAlpha.get();
@@ -480,7 +480,7 @@ public class LavaMarker extends Module {
             double expansion = spread * i;
             int    layerAlpha = Math.max(4, (int) (baseAlpha * (1.0 - (double)(i - 1) / layers)));
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -502,7 +502,7 @@ public class LavaMarker extends Module {
         return Math.min(255, Math.max(0, (int)(min + (max - min) * f)));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse();
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -511,7 +511,7 @@ public class LavaMarker extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);

@@ -27,38 +27,38 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
-import net.minecraft.component.type.ContainerComponent;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.nbt.StringNbtReader;
-import net.minecraft.registry.RegistryOps;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ShulkerBoxScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.BundleContents;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 /** Replenish mode for each item — controls how many to keep in inventory. */
 enum ReplenishMode {
@@ -373,55 +373,55 @@ public class Inventory101 extends Module {
     private int getPullLimit(Item item) {
         if (item == Items.ENDER_CHEST) {
             return switch (enderChestMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> enderChestCount.get();
             };
         }
         if (item == Items.OBSIDIAN) {
             return switch (obsidianMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> obsidianCount.get();
             };
         }
         if (item == Items.FIREWORK_ROCKET) {
             return switch (fireworkRocketMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> fireworkRocketCount.get();
             };
         }
         if (item == Items.ENCHANTED_GOLDEN_APPLE) {
             return switch (enchantedGoldenAppleMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> enchantedGoldenAppleCount.get();
             };
         }
         if (item == Items.TOTEM_OF_UNDYING) {
             return switch (totemMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> totemCount.get();
             };
         }
         if (item == Items.ELYTRA) {
             return switch (elytraMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> elytraCount.get();
             };
         }
         if (item == Items.END_CRYSTAL) {
             return switch (endCrystalMode.get()) {
-                case Single -> item.getMaxCount();
+                case Single -> item.getDefaultMaxStackSize();
                 case Fill -> Integer.MAX_VALUE;
                 case Custom -> endCrystalCount.get();
             };
         }
         return switch (customMode.get()) {
-            case Single -> item.getMaxCount();
+            case Single -> item.getDefaultMaxStackSize();
             case Fill -> Integer.MAX_VALUE;
             case Custom -> customCount.get();
         };
@@ -650,45 +650,45 @@ public class Inventory101 extends Module {
     public void openPreview(ItemStack stack) {
         if (mc.player == null || stack.isEmpty()) return;
 
-        Screen previousScreen = mc.currentScreen;
+        Screen previousScreen = mc.screen;
         Object data = getContainerData(stack);
 
-        if (data instanceof ContainerComponent container) {
-            SimpleInventory inventory = new SimpleInventory(27);
+        if (data instanceof ItemContainerContents container) {
+            SimpleContainer inventory = new SimpleContainer(27);
             int slot = 0;
-            for (ItemStack item : container.iterateNonEmpty()) {
+            for (ItemStack item : container.nonEmptyItemCopyStream().toList()) {
                 if (slot < 27) {
-                    inventory.setStack(slot++, item.copy());
+                    inventory.setItem(slot++, item.copy());
                 }
             }
 
             mc.setScreen(new ShulkerBoxScreen(
-                new ShulkerBoxScreenHandler(mc.player.playerScreenHandler.syncId, mc.player.getInventory(), inventory),
+                new ShulkerBoxMenu(mc.player.inventoryMenu.containerId, mc.player.getInventory(), inventory),
                 mc.player.getInventory(),
-                stack.getName()
+                stack.getHoverName()
             ) {
                 @Override
-                public void close() {
-                    client.setScreen(previousScreen);
+                public void onClose() {
+                    minecraft.setScreen(previousScreen);
                 }
             });
-        } else if (data instanceof BundleContentsComponent bundle) {
-            SimpleInventory inventory = new SimpleInventory(64);
+        } else if (data instanceof BundleContents bundle) {
+            SimpleContainer inventory = new SimpleContainer(64);
             int slot = 0;
-            for (ItemStack item : bundle.iterate()) {
+            for (ItemStack item : bundle.itemCopyStream().toList()) {
                 if (slot < 64) {
-                    inventory.setStack(slot++, item.copy());
+                    inventory.setItem(slot++, item.copy());
                 }
             }
 
-            mc.setScreen(new GenericContainerScreen(
-                GenericContainerScreenHandler.createGeneric9x6(mc.player.playerScreenHandler.syncId, mc.player.getInventory(), inventory),
+            mc.setScreen(new ContainerScreen(
+                ChestMenu.sixRows(mc.player.inventoryMenu.containerId, mc.player.getInventory(), inventory),
                 mc.player.getInventory(),
-                stack.getName()
+                stack.getHoverName()
             ) {
                 @Override
-                public void close() {
-                    client.setScreen(previousScreen);
+                public void onClose() {
+                    minecraft.setScreen(previousScreen);
                 }
             });
         }
@@ -697,50 +697,50 @@ public class Inventory101 extends Module {
     public void openEnderChestPreview(ItemStack chestStack) {
         if (mc.player == null) return;
         
-        Screen previousScreen = mc.currentScreen;
-        SimpleInventory inventory = new SimpleInventory(27);
+        Screen previousScreen = mc.screen;
+        SimpleContainer inventory = new SimpleContainer(27);
         
-        ContainerComponent container = chestStack.get(DataComponentTypes.CONTAINER);
+        ItemContainerContents container = chestStack.get(DataComponents.CONTAINER);
         if (container != null) {
             int slot = 0;
-            for (ItemStack item : container.iterateNonEmpty()) {
+            for (ItemStack item : container.nonEmptyItemCopyStream().toList()) {
                 if (slot < 27) {
-                    inventory.setStack(slot, item.copy());
+                    inventory.setItem(slot, item.copy());
                     slot++;
                 }
             }
         } else {
-            net.minecraft.inventory.EnderChestInventory enderChest = mc.player.getEnderChestInventory();
+            net.minecraft.world.inventory.PlayerEnderChestContainer enderChest = mc.player.getEnderChestInventory();
             if (enderChest != null) {
                 for (int i = 0; i < 27; i++) {
-                    ItemStack st = enderChest.getStack(i);
-                    inventory.setStack(i, st.isEmpty() ? cachedEnderChest[i] : st);
+                    ItemStack st = enderChest.getItem(i);
+                    inventory.setItem(i, st.isEmpty() ? cachedEnderChest[i] : st);
                 }
             } else {
                 for (int i = 0; i < 27; i++) {
-                    inventory.setStack(i, cachedEnderChest[i].copy());
+                    inventory.setItem(i, cachedEnderChest[i].copy());
                 }
             }
         }
 
         mc.setScreen(new ShulkerBoxScreen(
-            new ShulkerBoxScreenHandler(mc.player.playerScreenHandler.syncId, mc.player.getInventory(), inventory),
+            new ShulkerBoxMenu(mc.player.inventoryMenu.containerId, mc.player.getInventory(), inventory),
             mc.player.getInventory(),
-            chestStack.getName()
+            chestStack.getHoverName()
         ) {
             @Override
-            public void close() {
-                client.setScreen(previousScreen);
+            public void onClose() {
+                minecraft.setScreen(previousScreen);
             }
         });
     }
 
     public static boolean isEnderChest(ItemStack stack) {
-        return stack.isOf(Items.ENDER_CHEST);
+        return stack.is(Items.ENDER_CHEST);
     }
 
     public static boolean isBundle(ItemStack stack) {
-        return stack.contains(DataComponentTypes.BUNDLE_CONTENTS);
+        return stack.has(DataComponents.BUNDLE_CONTENTS);
     }
 
     private static final ItemStack[] cachedEnderChest = new ItemStack[27];
@@ -748,17 +748,17 @@ public class Inventory101 extends Module {
         for (int i = 0; i < 27; i++) cachedEnderChest[i] = ItemStack.EMPTY;
     }
 
-    public static void updateCachedEnderChest(net.minecraft.inventory.Inventory inventory) {
-        for (int i = 0; i < 27 && i < inventory.size(); i++) {
-            cachedEnderChest[i] = inventory.getStack(i).copy();
+    public static void updateCachedEnderChest(net.minecraft.world.Container inventory) {
+        for (int i = 0; i < 27 && i < inventory.getContainerSize(); i++) {
+            cachedEnderChest[i] = inventory.getItem(i).copy();
         }
     }
 
     public static Object getContainerData(ItemStack stack) {
         if (stack.getItem() instanceof BlockItem item && item.getBlock() instanceof ShulkerBoxBlock) {
-            return stack.get(DataComponentTypes.CONTAINER);
+            return stack.get(DataComponents.CONTAINER);
         }
-        return stack.get(DataComponentTypes.BUNDLE_CONTENTS);
+        return stack.get(DataComponents.BUNDLE_CONTENTS);
     }
 
     public static ItemStack getDominantItem(ItemStack containerStack) {
@@ -773,10 +773,10 @@ public class Inventory101 extends Module {
         }
 
         Iterable<ItemStack> items;
-        if (data instanceof ContainerComponent container) {
-            items = container.iterateNonEmpty();
-        } else if (data instanceof BundleContentsComponent bundle) {
-            items = bundle.iterate();
+        if (data instanceof ItemContainerContents container) {
+            items = container.nonEmptyItemCopyStream().toList();
+        } else if (data instanceof BundleContents bundle) {
+            items = bundle.itemCopyStream().toList();
         } else {
             return ItemStack.EMPTY;
         }
@@ -803,7 +803,7 @@ public class Inventory101 extends Module {
         return result;
     }
 
-    public void renderIconOverlay(DrawContext context, ItemStack stack, int px, int py) {
+    public void renderIconOverlay(GuiGraphicsExtractor context, ItemStack stack, int px, int py) {
         if (!this.isActive() || this.drawingOverlay || stack.isEmpty()) return;
 
         ItemStack dominant = getDominantItem(stack);
@@ -816,12 +816,12 @@ public class Inventory101 extends Module {
 
         this.drawingOverlay = true;
         try {
-            var matrices = context.getMatrices();
-            matrices.push();
-            matrices.translate(ox, oy, 200.0F);
-            matrices.scale(scale, scale, 1.0F);
-            context.drawItem(dominant, 0, 0);
-            matrices.pop();
+            var matrices = context.pose();
+            matrices.pushMatrix();
+            matrices.translate(ox, oy);
+            matrices.scale(scale, scale);
+            context.item(dominant, 0, 0);
+            matrices.popMatrix();
         } finally {
             this.drawingOverlay = false;
         }
@@ -842,12 +842,12 @@ public class Inventory101 extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         tickAutoTool();
 
         if (isRegearing) {
-            if (!(mc.currentScreen instanceof ShulkerBoxScreen)) { isRegearing = false; return; }
+            if (!(mc.screen instanceof ShulkerBoxScreen)) { isRegearing = false; return; }
             if (regearTimer > 0) { regearTimer--; return; }
             if (performRegearStep()) {
                 regearTimer = regearDelay.get();
@@ -855,40 +855,40 @@ public class Inventory101 extends Module {
                 boolean wasPresetRegear = regearPresetIndex != 0;
                 isRegearing = false;
                 info("Regear §acomplete§7.");
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                 if (!wasPresetRegear) startReplenishing();
             }
             return;
         }
 
         if (isReplenishing) {
-            if (!(mc.currentScreen instanceof ShulkerBoxScreen)) { isReplenishing = false; return; }
+            if (!(mc.screen instanceof ShulkerBoxScreen)) { isReplenishing = false; return; }
             if (replenishTimer > 0) { replenishTimer--; return; }
             if (performReplenishStep()) {
                 replenishTimer = replenishDelay.get();
             } else {
                 info("Restock §acomplete§7.");
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
                 isReplenishing = false;
             }
             return;
         }
 
         if (isInvSorting) {
-            if (!(mc.currentScreen instanceof InventoryScreen)) { isInvSorting = false; return; }
+            if (!(mc.screen instanceof InventoryScreen)) { isInvSorting = false; return; }
             if (invSortTimer > 0) { invSortTimer--; return; }
             if (performInvSortStep()) {
                 invSortTimer = sortDelay.get();
             } else {
                 isInvSorting = false;
                 info(getPresetName(invSortPreset) + " sort §acomplete§7.");
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
             }
             return;
         }
 
         if (isSorting) {
-            if (!(mc.currentScreen instanceof GenericContainerScreen)) { isSorting = false; return; }
+            if (!(mc.screen instanceof ContainerScreen)) { isSorting = false; return; }
             if (sortTimer > 0) { sortTimer--; return; }
             if (performSortStep()) {
                 sortTimer = sortDelay.get();
@@ -906,15 +906,15 @@ public class Inventory101 extends Module {
 
     private void tickAutoTool() {
         if (!autoTool.get()) return;
-        if (mc.interactionManager.isBreakingBlock()) {
-            HitResult hit = mc.crosshairTarget;
+        if (mc.gameMode.isDestroying()) {
+            HitResult hit = mc.hitResult;
             if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {
-                BlockState state = mc.world.getBlockState(bhr.getBlockPos());
+                BlockState state = mc.level.getBlockState(bhr.getBlockPos());
                 if (!state.isAir()) {
                     int bestSlot = findBestTool(state);
-                    if (bestSlot != -1 && bestSlot != mc.player.getInventory().selectedSlot) {
+                    if (bestSlot != -1 && bestSlot != mc.player.getInventory().getSelectedSlot()) {
                         if (!wasBreaking) {
-                            prevSlotAutoTool = mc.player.getInventory().selectedSlot;
+                            prevSlotAutoTool = mc.player.getInventory().getSelectedSlot();
                             wasBreaking = true;
                         }
                         InvUtils.swap(bestSlot, silentAutoTool.get());
@@ -931,7 +931,7 @@ public class Inventory101 extends Module {
     }
 
     private void tickMouseInteractions() {
-        if (!(mc.currentScreen instanceof HandledScreen<?> screen)) {
+        if (!(mc.screen instanceof AbstractContainerScreen<?> screen)) {
             if (wasClicking) {
                 processedInDrag.clear();
                 lastMouseX = -1;
@@ -949,15 +949,15 @@ public class Inventory101 extends Module {
             if (!wasClicking) {
                 if (shiftClickAll.get()) {
                     Slot focused = getFocusedSlot(screen);
-                    if (focused != null && focused.hasStack()) {
+                    if (focused != null && focused.hasItem()) {
                         moveAllActionTaken = true;
-                        Item targetItem = focused.getStack().getItem();
-                        boolean clickedInPlayerInventory = focused.inventory == mc.player.getInventory();
-                        for (Slot slot : screen.getScreenHandler().slots) {
-                            boolean slotInPlayerInventory = slot.inventory == mc.player.getInventory();
-                            if (slot.hasStack() && slot.getStack().getItem() == targetItem) {
+                        Item targetItem = focused.getItem().getItem();
+                        boolean clickedInPlayerInventory = focused.container == mc.player.getInventory();
+                        for (Slot slot : screen.getMenu().slots) {
+                            boolean slotInPlayerInventory = slot.container == mc.player.getInventory();
+                            if (slot.hasItem() && slot.getItem().getItem() == targetItem) {
                                 if (clickedInPlayerInventory == slotInPlayerInventory) {
-                                    mc.interactionManager.clickSlot(screen.getScreenHandler().syncId, slot.id, 0, SlotActionType.QUICK_MOVE, mc.player);
+                                    mc.gameMode.handleContainerInput(screen.getMenu().containerId, slot.index, 0, ContainerInput.QUICK_MOVE, mc.player);
                                 }
                             }
                         }
@@ -965,17 +965,17 @@ public class Inventory101 extends Module {
                 }
                 if (!moveAllActionTaken) {
                     processedInDrag.clear();
-                    lastMouseX = mc.mouse.getX();
-                    lastMouseY = mc.mouse.getY();
+                    lastMouseX = mc.mouseHandler.xpos();
+                    lastMouseY = mc.mouseHandler.ypos();
                     Slot focused = getFocusedSlot(screen);
-                    if (focused != null && focused.hasStack() && !processedInDrag.contains(focused.id)) {
-                        mc.interactionManager.clickSlot(screen.getScreenHandler().syncId, focused.id, 0, SlotActionType.QUICK_MOVE, mc.player);
-                        processedInDrag.add(focused.id);
+                    if (focused != null && focused.hasItem() && !processedInDrag.contains(focused.index)) {
+                        mc.gameMode.handleContainerInput(screen.getMenu().containerId, focused.index, 0, ContainerInput.QUICK_MOVE, mc.player);
+                        processedInDrag.add(focused.index);
                     }
                 }
             } else if (!moveAllActionTaken) {
-                double mouseX = mc.mouse.getX();
-                double mouseY = mc.mouse.getY();
+                double mouseX = mc.mouseHandler.xpos();
+                double mouseY = mc.mouseHandler.ypos();
                 
                 if (lastMouseX != -1) {
                     double deltaX = mouseX - lastMouseX;
@@ -988,18 +988,18 @@ public class Inventory101 extends Module {
                             double currentX = lastMouseX + (deltaX * i / steps);
                             double currentY = lastMouseY + (deltaY * i / steps);
                             Slot slot = getSlotAt(screen, currentX, currentY);
-                            if (slot != null && slot.hasStack() && !processedInDrag.contains(slot.id)) {
-                                mc.interactionManager.clickSlot(screen.getScreenHandler().syncId, slot.id, 0, SlotActionType.QUICK_MOVE, mc.player);
-                                processedInDrag.add(slot.id);
+                            if (slot != null && slot.hasItem() && !processedInDrag.contains(slot.index)) {
+                                mc.gameMode.handleContainerInput(screen.getMenu().containerId, slot.index, 0, ContainerInput.QUICK_MOVE, mc.player);
+                                processedInDrag.add(slot.index);
                             }
                         }
                     }
                 }
                 
                 Slot focused = getFocusedSlot(screen);
-                if (focused != null && focused.hasStack() && !processedInDrag.contains(focused.id)) {
-                    mc.interactionManager.clickSlot(screen.getScreenHandler().syncId, focused.id, 0, SlotActionType.QUICK_MOVE, mc.player);
-                    processedInDrag.add(focused.id);
+                if (focused != null && focused.hasItem() && !processedInDrag.contains(focused.index)) {
+                    mc.gameMode.handleContainerInput(screen.getMenu().containerId, focused.index, 0, ContainerInput.QUICK_MOVE, mc.player);
+                    processedInDrag.add(focused.index);
                 }
                 
                 lastMouseX = mouseX;
@@ -1017,7 +1017,7 @@ public class Inventory101 extends Module {
     }
 
     private boolean performRegearStep() {
-        if (!(mc.player.currentScreenHandler instanceof ShulkerBoxScreenHandler handler)) return false;
+        if (!(mc.player.containerMenu instanceof ShulkerBoxMenu handler)) return false;
         if (regearPresetIndex == 0) return performGenericRegearStep(handler);
 
         List<ItemStack> preset = getPreset(regearPresetIndex);
@@ -1037,9 +1037,9 @@ public class Inventory101 extends Module {
 
             if (presetSlot >= 36) {
                 for (int j = 0; j < 27; j++) {
-                    ItemStack shulkerStack = handler.getSlot(j).getStack();
+                    ItemStack shulkerStack = handler.getSlot(j).getItem();
                     if (shulkerStack.isEmpty() || !isSameItemType(shulkerStack, desired)) continue;
-                    if (shulkerStack.isOf(Items.ELYTRA) && isLowDurabilityElytra(shulkerStack)) continue;
+                    if (shulkerStack.is(Items.ELYTRA) && isLowDurabilityElytra(shulkerStack)) continue;
 
                     if (presetSlot == 36) {
                         quickMove(j);
@@ -1059,7 +1059,7 @@ public class Inventory101 extends Module {
 
                 for (int i = 27; i < 63; i++) {
                     if (i == targetSlotId) continue;
-                    ItemStack invStack = handler.getSlot(i).getStack();
+                    ItemStack invStack = handler.getSlot(i).getItem();
                     if (invStack.isEmpty() || !isSameItemType(invStack, desired)) continue;
 
                     int sourceInvIndex = screenHandlerSlotToInvIndex(i);
@@ -1072,9 +1072,9 @@ public class Inventory101 extends Module {
                 }
 
                 for (int j = 0; j < 27; j++) {
-                    ItemStack shulkerStack = handler.getSlot(j).getStack();
+                    ItemStack shulkerStack = handler.getSlot(j).getItem();
                     if (shulkerStack.isEmpty() || !isSameItemType(shulkerStack, desired)) continue;
-                    if (shulkerStack.isOf(Items.ELYTRA) && isLowDurabilityElytra(shulkerStack)) continue;
+                    if (shulkerStack.is(Items.ELYTRA) && isLowDurabilityElytra(shulkerStack)) continue;
                     smartMove(j, targetSlotId);
                     return true;
                 }
@@ -1085,15 +1085,15 @@ public class Inventory101 extends Module {
 
     private boolean isPresetSlotMatch(int presetSlot, ItemStack desired) {
         ItemStack current;
-        if (presetSlot < 36) current = mc.player.getInventory().getStack(presetSlot);
-        else if (presetSlot == 36) current = mc.player.getOffHandStack();
+        if (presetSlot < 36) current = mc.player.getInventory().getItem(presetSlot);
+        else if (presetSlot == 36) current = mc.player.getOffhandItem();
         else {
             EquipmentSlot eqSlot = presetIndexToArmorSlot(presetSlot);
             if (eqSlot == null) return false;
-            current = mc.player.getEquippedStack(eqSlot);
+            current = mc.player.getItemBySlot(eqSlot);
         }
         if (!isSameItemType(current, desired)) return false;
-        if (current.isOf(Items.ELYTRA) && isLowDurabilityElytra(current)) return false;
+        if (current.is(Items.ELYTRA) && isLowDurabilityElytra(current)) return false;
         return true;
     }
 
@@ -1103,12 +1103,12 @@ public class Inventory101 extends Module {
         return -1;
     }
 
-    private boolean performGenericRegearStep(ShulkerBoxScreenHandler handler) {
+    private boolean performGenericRegearStep(ShulkerBoxMenu handler) {
         EquipmentSlot[] armorSlots = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
         for (EquipmentSlot slot : armorSlots) {
-            ItemStack current = mc.player.getEquippedStack(slot);
+            ItemStack current = mc.player.getItemBySlot(slot);
             boolean needsEquip = current.isEmpty();
-            if (slot == EquipmentSlot.CHEST && !current.isEmpty() && current.isOf(Items.ELYTRA) && isLowDurabilityElytra(current)) {
+            if (slot == EquipmentSlot.CHEST && !current.isEmpty() && current.is(Items.ELYTRA) && isLowDurabilityElytra(current)) {
                 needsEquip = true;
             }
             if (needsEquip) {
@@ -1118,14 +1118,14 @@ public class Inventory101 extends Module {
                 };
                 if (armorIndex == -1) continue;
                 for (int j = 0; j < 27; j++) {
-                    ItemStack shulkerStack = handler.getSlot(j).getStack();
+                    ItemStack shulkerStack = handler.getSlot(j).getItem();
                     if (shulkerStack.isEmpty()) continue;
-                    var equippable = shulkerStack.get(DataComponentTypes.EQUIPPABLE);
+                    var equippable = shulkerStack.get(DataComponents.EQUIPPABLE);
                     if (equippable != null && equippable.slot() == slot) {
                         quickMove(j);
                         return true;
                     }
-                    if (slot == EquipmentSlot.CHEST && shulkerStack.isOf(Items.ELYTRA) && !isLowDurabilityElytra(shulkerStack)) {
+                    if (slot == EquipmentSlot.CHEST && shulkerStack.is(Items.ELYTRA) && !isLowDurabilityElytra(shulkerStack)) {
                         quickMove(j);
                         return true;
                     }
@@ -1133,10 +1133,10 @@ public class Inventory101 extends Module {
             }
         }
 
-        ItemStack offhand = mc.player.getOffHandStack();
-        if (!offhand.isOf(Items.TOTEM_OF_UNDYING)) {
+        ItemStack offhand = mc.player.getOffhandItem();
+        if (!offhand.is(Items.TOTEM_OF_UNDYING)) {
             for (int j = 0; j < 27; j++) {
-                if (handler.getSlot(j).getStack().isOf(Items.TOTEM_OF_UNDYING)) {
+                if (handler.getSlot(j).getItem().is(Items.TOTEM_OF_UNDYING)) {
                     quickMove(j);
                     return true;
                 }
@@ -1164,14 +1164,14 @@ public class Inventory101 extends Module {
     }
 
     private boolean performReplenishStep() {
-        if (!(mc.player.currentScreenHandler instanceof ShulkerBoxScreenHandler handler)) return false;
+        if (!(mc.player.containerMenu instanceof ShulkerBoxMenu handler)) return false;
 
         List<Item> whitelist = getReplenishWhitelist();
         if (whitelist.isEmpty()) return false;
 
         Map<Item, List<Integer>> shulkerSlots = new LinkedHashMap<>();
         for (int j = 0; j < 27; j++) {
-            ItemStack stack = handler.getSlot(j).getStack();
+            ItemStack stack = handler.getSlot(j).getItem();
             if (stack.isEmpty()) continue;
             if (whitelist.contains(stack.getItem())) {
                 shulkerSlots.computeIfAbsent(stack.getItem(), k -> new ArrayList<>()).add(j);
@@ -1181,14 +1181,14 @@ public class Inventory101 extends Module {
         Map<Item, InvItemState> invState = new LinkedHashMap<>();
         boolean hasEmptyInvSlot = false;
         for (int i = 27; i < 63; i++) {
-            ItemStack stack = handler.getSlot(i).getStack();
+            ItemStack stack = handler.getSlot(i).getItem();
             if (stack.isEmpty()) {
                 hasEmptyInvSlot = true;
                 continue;
             }
             Item item = stack.getItem();
             InvItemState state = invState.computeIfAbsent(item, k -> new InvItemState());
-            state.maxCount = stack.getMaxCount();
+            state.maxCount = stack.getMaxStackSize();
 
             if (isBadElytra(stack)) {
                 state.badElytraSlotId = i;
@@ -1196,7 +1196,7 @@ public class Inventory101 extends Module {
             }
 
             state.totalCount += stack.getCount();
-            if (stack.getCount() < stack.getMaxCount() && state.partialSlotId == -1) {
+            if (stack.getCount() < stack.getMaxStackSize() && state.partialSlotId == -1) {
                 state.partialSlotId = i;
                 state.partialCount = stack.getCount();
             }
@@ -1221,7 +1221,7 @@ public class Inventory101 extends Module {
             if (space <= 0) continue;
 
             for (int shulkerSlot : slots) {
-                ItemStack shulkerStack = handler.getSlot(shulkerSlot).getStack();
+                ItemStack shulkerStack = handler.getSlot(shulkerSlot).getItem();
                 if (shulkerStack.isEmpty() || shulkerStack.getItem() != item) continue;
 
                 int itemsMoved = Math.min(shulkerStack.getCount(), space);
@@ -1249,7 +1249,7 @@ public class Inventory101 extends Module {
             if (!hasRoom) continue;
 
             for (int shulkerSlot : slots) {
-                ItemStack shulkerStack = handler.getSlot(shulkerSlot).getStack();
+                ItemStack shulkerStack = handler.getSlot(shulkerSlot).getItem();
                 if (shulkerStack.isEmpty() || shulkerStack.getItem() != item) continue;
 
                 int itemsMoved = shulkerStack.getCount();
@@ -1262,13 +1262,13 @@ public class Inventory101 extends Module {
         return false;
     }
 
-    private boolean handleElytraSwaps(ShulkerBoxScreenHandler handler, List<Integer> elytraSlots) {
+    private boolean handleElytraSwaps(ShulkerBoxMenu handler, List<Integer> elytraSlots) {
         int bestShulkerSlot = -1;
         int bestShulkerDurability = -1;
         for (int slot : elytraSlots) {
-            ItemStack stack = handler.getSlot(slot).getStack();
-            if (!stack.isOf(Items.ELYTRA)) continue;
-            int remaining = stack.getMaxDamage() - stack.getDamage();
+            ItemStack stack = handler.getSlot(slot).getItem();
+            if (!stack.is(Items.ELYTRA)) continue;
+            int remaining = stack.getMaxDamage() - stack.getDamageValue();
             if (remaining > bestShulkerDurability) {
                 bestShulkerDurability = remaining;
                 bestShulkerSlot = slot;
@@ -1279,9 +1279,9 @@ public class Inventory101 extends Module {
             int worstInvSlot = -1;
             int worstInvDurability = Integer.MAX_VALUE;
             for (int i = 27; i < 63; i++) {
-                ItemStack invStack = handler.getSlot(i).getStack();
-                if (!invStack.isOf(Items.ELYTRA)) continue;
-                int remaining = invStack.getMaxDamage() - invStack.getDamage();
+                ItemStack invStack = handler.getSlot(i).getItem();
+                if (!invStack.is(Items.ELYTRA)) continue;
+                int remaining = invStack.getMaxDamage() - invStack.getDamageValue();
                 if (remaining < worstInvDurability) {
                     worstInvDurability = remaining;
                     worstInvSlot = i;
@@ -1299,24 +1299,24 @@ public class Inventory101 extends Module {
         if (elytrasPulled < elytraPullLimit) {
             int goodSlot = -1;
             for (int slot : elytraSlots) {
-                ItemStack stack = handler.getSlot(slot).getStack();
-                if (stack.isOf(Items.ELYTRA) && !isLowDurabilityElytra(stack)) {
+                ItemStack stack = handler.getSlot(slot).getItem();
+                if (stack.is(Items.ELYTRA) && !isLowDurabilityElytra(stack)) {
                     goodSlot = slot;
                     break;
                 }
             }
 
             boolean hasAnyElytra = false;
-            if (mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) hasAnyElytra = true;
+            if (mc.player.getItemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA)) hasAnyElytra = true;
             for (int i = 27; i < 63; i++) {
-                if (handler.getSlot(i).getStack().isOf(Items.ELYTRA)) { hasAnyElytra = true; break; }
+                if (handler.getSlot(i).getItem().is(Items.ELYTRA)) { hasAnyElytra = true; break; }
             }
 
             int pullSlot = goodSlot != -1 ? goodSlot : (!hasAnyElytra ? bestShulkerSlot : -1);
 
             if (pullSlot != -1) {
                 for (int i = 27; i < 63; i++) {
-                    if (handler.getSlot(i).getStack().isEmpty()) {
+                    if (handler.getSlot(i).getItem().isEmpty()) {
                         smartMove(pullSlot, i);
                         pulledThisSession.merge(Items.ELYTRA, 1, Integer::sum);
                         return true;
@@ -1326,10 +1326,10 @@ public class Inventory101 extends Module {
         }
 
         for (int i = 27; i < 63; i++) {
-            ItemStack invStack = handler.getSlot(i).getStack();
-            if (!invStack.isOf(Items.ELYTRA) || !isLowDurabilityElytra(invStack)) continue;
+            ItemStack invStack = handler.getSlot(i).getItem();
+            if (!invStack.is(Items.ELYTRA) || !isLowDurabilityElytra(invStack)) continue;
             for (int j = 0; j < 27; j++) {
-                if (handler.getSlot(j).getStack().isEmpty()) {
+                if (handler.getSlot(j).getItem().isEmpty()) {
                     smartMove(i, j);
                     return true;
                 }
@@ -1341,7 +1341,7 @@ public class Inventory101 extends Module {
     }
 
     private boolean isBadElytra(ItemStack stack) {
-        return stack.isOf(Items.ELYTRA) && isLowDurabilityElytra(stack);
+        return stack.is(Items.ELYTRA) && isLowDurabilityElytra(stack);
     }
 
     private boolean performInvSortStep() {
@@ -1352,15 +1352,15 @@ public class Inventory101 extends Module {
         for (int i = 0; i < 36; i++) {
             ItemStack desired = preset.get(i);
             if (desired.isEmpty()) {
-                satisfied[i] = mc.player.getInventory().getStack(i).isEmpty();
+                satisfied[i] = mc.player.getInventory().getItem(i).isEmpty();
                 continue;
             }
-            if (!inventoryClaimed[i] && isSameItemType(mc.player.getInventory().getStack(i), desired)) {
+            if (!inventoryClaimed[i] && isSameItemType(mc.player.getInventory().getItem(i), desired)) {
                 satisfied[i] = true;
                 inventoryClaimed[i] = true;
             } else {
                 for (int j = 0; j < 36; j++) {
-                    if (!inventoryClaimed[j] && isSameItemType(mc.player.getInventory().getStack(j), desired)) {
+                    if (!inventoryClaimed[j] && isSameItemType(mc.player.getInventory().getItem(j), desired)) {
                         inventoryClaimed[j] = true;
                         break;
                     }
@@ -1371,18 +1371,18 @@ public class Inventory101 extends Module {
         for (int i = 0; i < 36; i++) {
             if (satisfied[i]) continue;
             ItemStack desired = preset.get(i);
-            if (desired.isEmpty() || !mc.player.getInventory().getStack(i).isEmpty()) continue;
+            if (desired.isEmpty() || !mc.player.getInventory().getItem(i).isEmpty()) continue;
             for (int j = 0; j < 36; j++) {
-                if (j == i || !isSameItemType(mc.player.getInventory().getStack(j), desired) || satisfied[j]) continue;
+                if (j == i || !isSameItemType(mc.player.getInventory().getItem(j), desired) || satisfied[j]) continue;
                 InvUtils.move().from(j).to(i);
                 return true;
             }
         }
 
         for (int i = 0; i < 36; i++) {
-            if (satisfied[i] || mc.player.getInventory().getStack(i).isEmpty()) continue;
+            if (satisfied[i] || mc.player.getInventory().getItem(i).isEmpty()) continue;
             for (int j = 0; j < 36; j++) {
-                if (j == i || !mc.player.getInventory().getStack(j).isEmpty()) continue;
+                if (j == i || !mc.player.getInventory().getItem(j).isEmpty()) continue;
                 InvUtils.move().from(i).to(j);
                 return true;
             }
@@ -1391,16 +1391,16 @@ public class Inventory101 extends Module {
     }
 
     private boolean performSortStep() {
-        if (!(mc.player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) return false;
-        int invSize = handler.getRows() * 9;
+        if (!(mc.player.containerMenu instanceof ChestMenu handler)) return false;
+        int invSize = handler.getRowCount() * 9;
         List<ItemStack> current = new ArrayList<>();
-        for (int i = 0; i < invSize; i++) current.add(handler.getSlot(i).getStack());
+        for (int i = 0; i < invSize; i++) current.add(handler.getSlot(i).getItem());
         List<ItemStack> sorted = new ArrayList<>(current);
         sorted.sort(new ShulkerColorComparator());
         for (int i = 0; i < invSize; i++) {
-            if (!ItemStack.areEqual(current.get(i), sorted.get(i))) {
+            if (!ItemStack.matches(current.get(i), sorted.get(i))) {
                 for (int j = i + 1; j < invSize; j++) {
-                    if (ItemStack.areEqual(current.get(j), sorted.get(i))) {
+                    if (ItemStack.matches(current.get(j), sorted.get(i))) {
                         smartMove(j, i);
                         return true;
                     }
@@ -1411,13 +1411,13 @@ public class Inventory101 extends Module {
     }
 
     private boolean performTrashStep() {
-        if (mc.player.currentScreenHandler == null) return false;
-        ScreenHandler handler = mc.player.currentScreenHandler;
+        if (mc.player.containerMenu == null) return false;
+        AbstractContainerMenu handler = mc.player.containerMenu;
         int playerStart = handler.slots.size() - 36;
         for (int i = playerStart; i < handler.slots.size(); i++) {
-            ItemStack stack = handler.getSlot(i).getStack();
+            ItemStack stack = handler.getSlot(i).getItem();
             if (!stack.isEmpty() && trashItems.get().contains(stack.getItem())) {
-                mc.interactionManager.clickSlot(handler.syncId, i, 1, SlotActionType.THROW, mc.player);
+                mc.gameMode.handleContainerInput(handler.containerId, i, 1, ContainerInput.THROW, mc.player);
                 return true;
             }
         }
@@ -1425,27 +1425,27 @@ public class Inventory101 extends Module {
     }
 
     private void smartMove(int from, int to) {
-        if (mc.interactionManager == null || mc.player == null) return;
-        ScreenHandler handler = mc.player.currentScreenHandler;
-        if (!handler.getCursorStack().isEmpty()) return;
-        int syncId = handler.syncId;
+        if (mc.gameMode == null || mc.player == null) return;
+        AbstractContainerMenu handler = mc.player.containerMenu;
+        if (!handler.getCarried().isEmpty()) return;
+        int syncId = handler.containerId;
 
-        ItemStack targetStack = handler.getSlot(to).getStack();
+        ItemStack targetStack = handler.getSlot(to).getItem();
         if (targetStack.isEmpty()) {
-            mc.interactionManager.clickSlot(syncId, from, 0, SlotActionType.PICKUP, mc.player);
-            mc.interactionManager.clickSlot(syncId, to,   0, SlotActionType.PICKUP, mc.player);
+            mc.gameMode.handleContainerInput(syncId, from, 0, ContainerInput.PICKUP, mc.player);
+            mc.gameMode.handleContainerInput(syncId, to,   0, ContainerInput.PICKUP, mc.player);
         } else {
-            mc.interactionManager.clickSlot(syncId, from, 0, SlotActionType.PICKUP, mc.player);
-            mc.interactionManager.clickSlot(syncId, to,   0, SlotActionType.PICKUP, mc.player);
-            mc.interactionManager.clickSlot(syncId, from, 0, SlotActionType.PICKUP, mc.player);
+            mc.gameMode.handleContainerInput(syncId, from, 0, ContainerInput.PICKUP, mc.player);
+            mc.gameMode.handleContainerInput(syncId, to,   0, ContainerInput.PICKUP, mc.player);
+            mc.gameMode.handleContainerInput(syncId, from, 0, ContainerInput.PICKUP, mc.player);
         }
     }
 
     private void quickMove(int slot) {
-        if (mc.interactionManager == null || mc.player == null) return;
-        mc.interactionManager.clickSlot(
-            mc.player.currentScreenHandler.syncId,
-            slot, 0, SlotActionType.QUICK_MOVE, mc.player
+        if (mc.gameMode == null || mc.player == null) return;
+        mc.gameMode.handleContainerInput(
+            mc.player.containerMenu.containerId,
+            slot, 0, ContainerInput.QUICK_MOVE, mc.player
         );
     }
 
@@ -1460,11 +1460,11 @@ public class Inventory101 extends Module {
     }
 
     private void tickAutoDrop() {
-        if (autoTrash.get() && mc.currentScreen == null) {
+        if (autoTrash.get() && mc.screen == null) {
             if (trashTimer > 0) { trashTimer--; }
             else {
                 for (int i = 0; i < 36; i++) {
-                    ItemStack stack = mc.player.getInventory().getStack(i);
+                    ItemStack stack = mc.player.getInventory().getItem(i);
                     if (!stack.isEmpty() && trashItems.get().contains(stack.getItem())) {
                         InvUtils.drop().slot(i);
                         trashTimer = trashDelay.get();
@@ -1480,25 +1480,25 @@ public class Inventory101 extends Module {
     }
 
     private void saveInventory(int index) {
-        NbtCompound nbt  = new NbtCompound();
-        NbtList     list = new NbtList();
-        for (int i = 0; i < 36; i++) encodeSlot(list, mc.player.getInventory().getStack(i), i, mc);
-        encodeSlot(list, mc.player.getOffHandStack(), 36, mc);
-        encodeSlot(list, mc.player.getEquippedStack(EquipmentSlot.FEET),  37, mc);
-        encodeSlot(list, mc.player.getEquippedStack(EquipmentSlot.LEGS),  38, mc);
-        encodeSlot(list, mc.player.getEquippedStack(EquipmentSlot.CHEST), 39, mc);
-        encodeSlot(list, mc.player.getEquippedStack(EquipmentSlot.HEAD), 40, mc);
+        CompoundTag nbt  = new CompoundTag();
+        ListTag     list = new ListTag();
+        for (int i = 0; i < 36; i++) encodeSlot(list, mc.player.getInventory().getItem(i), i, mc);
+        encodeSlot(list, mc.player.getOffhandItem(), 36, mc);
+        encodeSlot(list, mc.player.getItemBySlot(EquipmentSlot.FEET),  37, mc);
+        encodeSlot(list, mc.player.getItemBySlot(EquipmentSlot.LEGS),  38, mc);
+        encodeSlot(list, mc.player.getItemBySlot(EquipmentSlot.CHEST), 39, mc);
+        encodeSlot(list, mc.player.getItemBySlot(EquipmentSlot.HEAD), 40, mc);
         nbt.put("Items", list);
         if (index == 1) preset1Data.set(nbt.toString());
         else            preset2Data.set(nbt.toString());
     }
 
-    private void encodeSlot(NbtList list, ItemStack stack, int slot, net.minecraft.client.MinecraftClient mc) {
+    private void encodeSlot(ListTag list, ItemStack stack, int slot, net.minecraft.client.Minecraft mc) {
         if (stack.isEmpty()) return;
-        NbtCompound itemTag = new NbtCompound();
+        CompoundTag itemTag = new CompoundTag();
         itemTag.putInt("Slot", slot);
-        NbtElement encodedItem = ItemStack.CODEC
-            .encodeStart(RegistryOps.of(NbtOps.INSTANCE, mc.world.getRegistryManager()), stack)
+        Tag encodedItem = ItemStack.CODEC
+            .encodeStart(RegistryOps.create(NbtOps.INSTANCE, mc.level.registryAccess()), stack)
             .getOrThrow();
         itemTag.put("item", encodedItem);
         list.add(itemTag);
@@ -1512,16 +1512,16 @@ public class Inventory101 extends Module {
         for (int i = 0; i < PRESET_SIZE; i++) items.add(ItemStack.EMPTY);
         if (nbtString == null || nbtString.isEmpty()) return items;
         try {
-            NbtCompound nbt = StringNbtReader.parse(nbtString);
-            if (nbt.contains("Items", NbtElement.LIST_TYPE)) {
-                NbtList list = nbt.getList("Items", NbtElement.COMPOUND_TYPE);
+            CompoundTag nbt = TagParser.parseCompoundFully(nbtString);
+            if (nbt.contains("Items")) {
+                ListTag list = nbt.getListOrEmpty("Items");
                 for (int i = 0; i < list.size(); i++) {
-                    NbtCompound itemTag = list.getCompound(i);
-                    int slot = itemTag.getInt("Slot");
-                    NbtElement itemNbt = itemTag.get("item");
+                    CompoundTag itemTag = list.getCompoundOrEmpty(i);
+                    int slot = itemTag.getIntOr("Slot", 0);
+                    Tag itemNbt = itemTag.get("item");
                     if (slot < PRESET_SIZE && itemNbt != null) {
                         ItemStack.CODEC
-                            .parse(RegistryOps.of(NbtOps.INSTANCE, mc.world.getRegistryManager()), itemNbt)
+                            .parse(RegistryOps.create(NbtOps.INSTANCE, mc.level.registryAccess()), itemNbt)
                             .result()
                             .ifPresent(s -> items.set(slot, s));
                     }
@@ -1533,32 +1533,32 @@ public class Inventory101 extends Module {
         return items;
     }
 
-    private Slot getSlotAt(HandledScreen<?> screen, double mouseX, double mouseY) {
-        double scaledMouseX = mouseX * mc.getWindow().getScaledWidth() / (double) mc.getWindow().getWidth();
-        double scaledMouseY = mouseY * mc.getWindow().getScaledHeight() / (double) mc.getWindow().getHeight();
+    private Slot getSlotAt(AbstractContainerScreen<?> screen, double mouseX, double mouseY) {
+        double scaledMouseX = mouseX * mc.getWindow().getGuiScaledWidth() / (double) mc.getWindow().getScreenWidth();
+        double scaledMouseY = mouseY * mc.getWindow().getGuiScaledHeight() / (double) mc.getWindow().getScreenHeight();
         int[] pos = getGuiPos(screen);
         if (pos == null) return null;
-        for (Slot slot : screen.getScreenHandler().slots) {
+        for (Slot slot : screen.getMenu().slots) {
             int x = pos[0] + slot.x, y = pos[1] + slot.y;
             if (scaledMouseX >= x && scaledMouseX < x + 16 && scaledMouseY >= y && scaledMouseY < y + 16) return slot;
         }
         return null;
     }
 
-    private int[] getGuiPos(HandledScreen<?> screen) {
+    private int[] getGuiPos(AbstractContainerScreen<?> screen) {
         try {
-            Field fX = HandledScreen.class.getDeclaredField("x"); fX.setAccessible(true);
-            Field fY = HandledScreen.class.getDeclaredField("y"); fY.setAccessible(true);
+            Field fX = AbstractContainerScreen.class.getDeclaredField("x"); fX.setAccessible(true);
+            Field fY = AbstractContainerScreen.class.getDeclaredField("y"); fY.setAccessible(true);
             return new int[]{ fX.getInt(screen), fY.getInt(screen) };
         } catch (Exception ignored) {}
         try {
-            Field fX = HandledScreen.class.getDeclaredField("field_2776"); fX.setAccessible(true);
-            Field fY = HandledScreen.class.getDeclaredField("field_2777"); fY.setAccessible(true);
+            Field fX = AbstractContainerScreen.class.getDeclaredField("field_2776"); fX.setAccessible(true);
+            Field fY = AbstractContainerScreen.class.getDeclaredField("field_2777"); fY.setAccessible(true);
             return new int[]{ fX.getInt(screen), fY.getInt(screen) };
         } catch (Exception ignored) {}
         try {
-            Field fW = HandledScreen.class.getDeclaredField("backgroundWidth");  fW.setAccessible(true);
-            Field fH = HandledScreen.class.getDeclaredField("backgroundHeight"); fH.setAccessible(true);
+            Field fW = AbstractContainerScreen.class.getDeclaredField("backgroundWidth");  fW.setAccessible(true);
+            Field fH = AbstractContainerScreen.class.getDeclaredField("backgroundHeight"); fH.setAccessible(true);
             int bgW = fW.getInt(screen);
             int bgH = fH.getInt(screen);
             return new int[]{ (screen.width - bgW) / 2, (screen.height - bgH) / 2 };
@@ -1566,14 +1566,14 @@ public class Inventory101 extends Module {
         return new int[]{ (screen.width - 176) / 2, (screen.height - 166) / 2 };
     }
 
-    private Slot getFocusedSlot(HandledScreen<?> screen) {
+    private Slot getFocusedSlot(AbstractContainerScreen<?> screen) {
         try {
-            Field f = HandledScreen.class.getDeclaredField("focusedSlot");
+            Field f = AbstractContainerScreen.class.getDeclaredField("focusedSlot");
             f.setAccessible(true);
             return (Slot) f.get(screen);
         } catch (Exception e) {
             try {
-                Field f = HandledScreen.class.getDeclaredField("field_2787");
+                Field f = AbstractContainerScreen.class.getDeclaredField("field_2787");
                 f.setAccessible(true);
                 return (Slot) f.get(screen);
             } catch (Exception e2) {
@@ -1582,8 +1582,8 @@ public class Inventory101 extends Module {
         }
     }
 
-    private Slot getSlotUnderMouse(HandledScreen<?> screen) {
-        return getSlotAt(screen, mc.mouse.getX(), mc.mouse.getY());
+    private Slot getSlotUnderMouse(AbstractContainerScreen<?> screen) {
+        return getSlotAt(screen, mc.mouseHandler.xpos(), mc.mouseHandler.ypos());
     }
 
     private int mapInventoryToSlotId(int invIndex) {
@@ -1596,8 +1596,8 @@ public class Inventory101 extends Module {
         int bestSlot = -1;
         float bestSpeed = 1.0f;
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
-            float speed = stack.getMiningSpeedMultiplier(state);
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            float speed = stack.getDestroySpeed(state);
             if (speed > bestSpeed) { bestSpeed = speed; bestSlot = i; }
         }
         return bestSlot;
@@ -1609,7 +1609,7 @@ public class Inventory101 extends Module {
     }
 
     private boolean isLowDurabilityElytra(ItemStack stack) {
-        return stack.isOf(Items.ELYTRA) && (stack.getMaxDamage() - stack.getDamage() < elytraThreshold.get());
+        return stack.is(Items.ELYTRA) && (stack.getMaxDamage() - stack.getDamageValue() < elytraThreshold.get());
     }
 
     private static class ShulkerColorComparator implements Comparator<ItemStack> {

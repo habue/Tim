@@ -17,8 +17,8 @@ import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.ItemStack;
 
 public class ChambersAssistantHud extends HudElement {
 
@@ -29,7 +29,7 @@ public class ChambersAssistantHud extends HudElement {
         ChambersAssistantHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     private final SettingGroup sgGeneral   = settings.getDefaultGroup();
     private final SettingGroup sgCategories = settings.createGroup("Categories");

@@ -34,13 +34,13 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 
 public class Tunnelers extends Module {
 
@@ -330,7 +330,7 @@ public class Tunnelers extends Module {
     @Override
     public void onActivate() {
         clearState();
-        if (mc.world != null) lastDimension = mc.world.getRegistryKey().getValue().toString();
+        if (mc.level != null) lastDimension = mc.level.dimension().identifier().toString();
 
         executor = Executors.newFixedThreadPool(4, r -> {
             Thread t = new Thread(r, "Tunnelers-Worker");
@@ -368,14 +368,14 @@ public class Tunnelers extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (dimensionChangeCooldown > 0) {
             dimensionChangeCooldown--;
             return;
         }
 
-        String currDim = mc.world.getRegistryKey().getValue().toString();
+        String currDim = mc.level.dimension().identifier().toString();
         if (!currDim.equals(lastDimension)) {
             lastDimension = currDim;
             dimensionChangeCooldown = 40;
@@ -390,8 +390,8 @@ public class Tunnelers extends Module {
             if (pruneOutOfRange()) scheduleMerge();
         }
 
-        int playerCX = mc.player.getBlockPos().getX() >> 4;
-        int playerCZ = mc.player.getBlockPos().getZ() >> 4;
+        int playerCX = mc.player.blockPosition().getX() >> 4;
+        int playerCZ = mc.player.blockPosition().getZ() >> 4;
         enqueueNewChunks(playerCX, playerCZ);
         drainSnapshotQueue();
     }
@@ -431,7 +431,7 @@ public class Tunnelers extends Module {
 
         ChunkPos cp = new ChunkPos(cx, cz);
         if (scannedChunks.contains(cp) || inFlight.contains(cp) || snapshotQueue.contains(cp)) return false;
-        if (!mc.world.getChunkManager().isChunkLoaded(cx, cz)) return false;
+        if (!mc.level.getChunkSource().hasChunk(cx, cz)) return false;
 
         return snapshotQueue.add(cp);
     }
@@ -444,8 +444,8 @@ public class Tunnelers extends Module {
             ChunkPos cp = it.next();
             it.remove();
 
-            if (!mc.world.getChunkManager().isChunkLoaded(cp.x, cp.z)) continue;
-            WorldChunk chunk = mc.world.getChunk(cp.x, cp.z);
+            if (!mc.level.getChunkSource().hasChunk(cp.x(), cp.z())) continue;
+            LevelChunk chunk = mc.level.getChunk(cp.x(), cp.z());
             if (chunk == null) continue;
 
             inFlight.add(cp);
@@ -485,15 +485,15 @@ public class Tunnelers extends Module {
     private boolean pruneOutOfRange() {
         if (mc.player == null) return false;
 
-        int centerCX = mc.player.getBlockPos().getX() >> 4;
-        int centerCZ = mc.player.getBlockPos().getZ() >> 4;
+        int centerCX = mc.player.blockPosition().getX() >> 4;
+        int centerCZ = mc.player.blockPosition().getZ() >> 4;
         int rSq = range.get() * range.get();
         boolean evicted = false;
 
         Iterator<ChunkPos> it = scannedChunks.iterator();
         while (it.hasNext()) {
             ChunkPos cp = it.next();
-            int dx = cp.x - centerCX, dz = cp.z - centerCZ;
+            int dx = cp.x() - centerCX, dz = cp.z() - centerCZ;
             if (dx * dx + dz * dz > rSq) {
                 evictChunk(cp);
                 it.remove();
@@ -515,9 +515,9 @@ public class Tunnelers extends Module {
     private void scheduleMerge() {
         if (!mergeScheduled.compareAndSet(false, true)) return;
 
-        snapPX = mc.player.getBlockPos().getX();
-        snapPY = mc.player.getBlockPos().getY();
-        snapPZ = mc.player.getBlockPos().getZ();
+        snapPX = mc.player.blockPosition().getX();
+        snapPY = mc.player.blockPosition().getY();
+        snapPZ = mc.player.blockPosition().getZ();
 
         final Map<BlockPos, TunnelType> locSnapshot = new HashMap<>(locations);
         final int px = snapPX, py = snapPY, pz = snapPZ;
@@ -661,17 +661,17 @@ public class Tunnelers extends Module {
             ft, ft, ft,
             doHoles, doLadders,
             minHoleHeight.get(), minLadderHeight.get(),
-            mc.world.getBottomY(), mc.world.getBottomY() + mc.world.getHeight()
+            mc.level.getMinY(), mc.level.getMinY() + mc.level.getHeight()
         );
     }
 
-    private BlockState[][] snapshotChunk(WorldChunk chunk) {
-        ChunkSection[] sections = chunk.getSectionArray();
+    private BlockState[][] snapshotChunk(LevelChunk chunk) {
+        LevelChunkSection[] sections = chunk.getSections();
         BlockState[][] out = new BlockState[sections.length][];
 
         for (int si = 0; si < sections.length; si++) {
-            ChunkSection sec = sections[si];
-            if (sec == null || sec.isEmpty()) continue;
+            LevelChunkSection sec = sections[si];
+            if (sec == null || sec.hasOnlyAir()) continue;
 
             BlockState[] data = new BlockState[16 * 16 * 16];
             for (int lx = 0; lx < 16; lx++)
@@ -685,7 +685,7 @@ public class Tunnelers extends Module {
 
     private Map<BlockPos, TunnelType> scanSnapshot(ChunkPos cp, BlockState[][] snapshot, int bottomCoord, ScanConfig config) {
         Map<BlockPos, TunnelType> results = new HashMap<>();
-        int baseX = cp.x << 4, baseZ = cp.z << 4;
+        int baseX = cp.x() << 4, baseZ = cp.z() << 4;
         ScanContext ctx = new ScanContext(snapshot, bottomCoord, config.minY, config.maxY,
             baseX, baseZ);
 
@@ -1090,7 +1090,7 @@ public class Tunnelers extends Module {
 
         boolean isSolid(int x, int y, int z) {
             BlockState s = get(x, y, z);
-            return s != null && s.isOpaque();
+            return s != null && s.canOcclude();
         }
 
         boolean isAir(int x, int y, int z) {
@@ -1100,13 +1100,13 @@ public class Tunnelers extends Module {
 
         boolean isLadder(int x, int y, int z) {
             BlockState s = get(x, y, z);
-            return s != null && s.isOf(Blocks.LADDER);
+            return s != null && s.is(Blocks.LADDER);
         }
 
         boolean isTunnelInterior(int x, int y, int z) {
             BlockState s = get(x, y, z);
             if (s == null || s.isAir()) return true;
-            if (s.isOf(Blocks.WATER) || s.isOf(Blocks.LAVA)) return true;
+            if (s.is(Blocks.WATER) || s.is(Blocks.LAVA)) return true;
             return false;
         }
     }

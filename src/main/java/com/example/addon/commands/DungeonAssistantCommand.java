@@ -4,8 +4,7 @@ import com.example.addon.modules.DungeonAssistant;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import meteordevelopment.meteorclient.commands.Command;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.command.CommandSource;
-
+import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 import java.util.Map;
 
 import static com.mojang.brigadier.Command.SINGLE_SUCCESS;
@@ -16,7 +15,7 @@ public class DungeonAssistantCommand extends Command {
     }
 
     @Override
-    public void build(LiteralArgumentBuilder<CommandSource> builder) {
+    public void build(LiteralArgumentBuilder<ClientSuggestionProvider> builder) {
         builder.executes(context -> {
             DungeonAssistant module = Modules.get().get(DungeonAssistant.class);
 

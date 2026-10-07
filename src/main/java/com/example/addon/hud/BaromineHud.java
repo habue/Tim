@@ -9,12 +9,11 @@ import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,7 +25,7 @@ public class BaromineHud extends HudElement {
         BaromineHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     private final SettingGroup sgGeneral  = settings.getDefaultGroup();
     private final SettingGroup sgWarnings = settings.createGroup("Warnings");
@@ -535,10 +534,10 @@ public class BaromineHud extends HudElement {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
-            ItemStack s = mc.player.getInventory().getStack(i);
-            if (s.isOf(item)) count += s.getCount();
+            ItemStack s = mc.player.getInventory().getItem(i);
+            if (s.is(item)) count += s.getCount();
         }
-        if (mc.player.getOffHandStack().isOf(item)) count += mc.player.getOffHandStack().getCount();
+        if (mc.player.getOffhandItem().is(item)) count += mc.player.getOffhandItem().getCount();
         return count;
     }
 
@@ -546,13 +545,13 @@ public class BaromineHud extends HudElement {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
-            ItemStack s = mc.player.getInventory().getStack(i);
-            if (s.getItem() instanceof net.minecraft.item.BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) {
+            ItemStack s = mc.player.getInventory().getItem(i);
+            if (s.getItem() instanceof net.minecraft.world.item.BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) {
                 count += s.getCount();
             }
         }
-        if (mc.player.getOffHandStack().getItem() instanceof net.minecraft.item.BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) {
-            count += mc.player.getOffHandStack().getCount();
+        if (mc.player.getOffhandItem().getItem() instanceof net.minecraft.world.item.BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) {
+            count += mc.player.getOffhandItem().getCount();
         }
         return count;
     }

@@ -3,25 +3,25 @@ package com.example.addon.mixin;
 import com.example.addon.modules.Illushine;
 import com.example.addon.modules.Inventory101;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.gui.hud.InGameHud;
-import net.minecraft.item.ItemStack;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(InGameHud.class)
+@Mixin(value = Gui.class, remap = false)
 public class InGameHudMixin {
 
     @Inject(
-        method = "renderCrosshair",
+        method = "extractCrosshair",
         at = @At("HEAD"),
         cancellable = true
     )
-    private void illushine$cancelCrosshair(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+    private void illushine$cancelCrosshair(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
         Illushine mod = Modules.get().get(Illushine.class);
         if (mod != null && mod.isActive() && mod.getCrosshairMode() != Illushine.CrosshairMode.None) {
             mod.drawCrosshair(context);
@@ -29,22 +29,22 @@ public class InGameHudMixin {
         }
     }
 
-    @Inject(method = "renderHotbar", at = @At("TAIL"))
-    private void onRenderHotbar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) return;
+    @Inject(method = "extractItemHotbar", at = @At("TAIL"))
+    private void onRenderHotbar(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) return;
 
         Inventory101 inv101 = Modules.get().get(Inventory101.class);
         if (inv101 == null || !inv101.isActive()) return;
 
-        int scaledWidth = client.getWindow().getScaledWidth();
-        int scaledHeight = client.getWindow().getScaledHeight();
+        int scaledWidth = client.getWindow().getGuiScaledWidth();
+        int scaledHeight = client.getWindow().getGuiScaledHeight();
         
         int startX = scaledWidth / 2 - 91;
         int startY = scaledHeight - 22;
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = client.player.getInventory().getStack(i);
+            ItemStack stack = client.player.getInventory().getItem(i);
             if (Inventory101.isShulker(stack)) {
                 ItemStack dominant = Inventory101.getDominantItem(stack);
                 if (!dominant.isEmpty()) {
@@ -53,11 +53,11 @@ public class InGameHudMixin {
                     int slotY = startY + 3;
                     float centerOffset = (16.0f * (1.0f - scale)) / 2.0f;
 
-                    context.getMatrices().push();
-                    context.getMatrices().translate(slotX + centerOffset, slotY + centerOffset, 230.0F);
-                    context.getMatrices().scale(scale, scale, 1.0F);
-                    context.drawItem(dominant, 0, 0);
-                    context.getMatrices().pop();
+                    context.pose().pushMatrix();
+                    context.pose().translate(slotX + centerOffset, slotY + centerOffset);
+                    context.pose().scale(scale, scale);
+                    context.item(dominant, 0, 0);
+                    context.pose().popMatrix();
                 }
             }
         }

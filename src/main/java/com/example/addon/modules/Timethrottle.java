@@ -13,13 +13,13 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.systems.modules.world.Timer;
 import meteordevelopment.meteorclient.utils.world.TickRate;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.World;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 
 public class Timethrottle extends Module {
 
@@ -284,7 +284,7 @@ public class Timethrottle extends Module {
             double tps = TickRate.INSTANCE.getTickRate();
             if (tps >= targetTps.get()) return NORMAL_SPEED;
             if (tps <= minTps.get()) return tpsMinSpeed.get();
-            return MathHelper.map(tps, minTps.get(), targetTps.get(), tpsMinSpeed.get(), NORMAL_SPEED);
+            return Mth.map(tps, minTps.get(), targetTps.get(), tpsMinSpeed.get(), NORMAL_SPEED);
         }
     };
 
@@ -299,10 +299,10 @@ public class Timethrottle extends Module {
             int maxThr;
 
             if (dimensionOverride.get()) {
-                if (mc.world.getRegistryKey() == World.NETHER) {
+                if (mc.level.dimension() == Level.NETHER) {
                     startThr = netherStart.get();
                     maxThr = netherMax.get();
-                } else if (mc.world.getRegistryKey() == World.END) {
+                } else if (mc.level.dimension() == Level.END) {
                     startThr = endStart.get();
                     maxThr = endMax.get();
                 } else {
@@ -316,7 +316,7 @@ public class Timethrottle extends Module {
 
             if (cachedUnloaded <= startThr) return NORMAL_SPEED;
             if (cachedUnloaded >= maxThr) return chunkLoadSlowdown.get();
-            return MathHelper.map(cachedUnloaded, startThr, maxThr, NORMAL_SPEED, chunkLoadSlowdown.get());
+            return Mth.map(cachedUnloaded, startThr, maxThr, NORMAL_SPEED, chunkLoadSlowdown.get());
         }
     };
 
@@ -327,7 +327,7 @@ public class Timethrottle extends Module {
             int ping = getPlayerPing();
             if (ping <= pingThreshold.get()) return NORMAL_SPEED;
             if (ping >= maxPing.get()) return pingMinSpeed.get();
-            return MathHelper.map(ping, pingThreshold.get(), maxPing.get(), NORMAL_SPEED, pingMinSpeed.get());
+            return Mth.map(ping, pingThreshold.get(), maxPing.get(), NORMAL_SPEED, pingMinSpeed.get());
         }
     };
 
@@ -399,9 +399,9 @@ public class Timethrottle extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
-        if (!mc.world.getChunkManager().isChunkLoaded(mc.player.getChunkPos().x, mc.player.getChunkPos().z)) {
+        if (!mc.level.getChunkSource().hasChunk(mc.player.chunkPosition().x(), mc.player.chunkPosition().z())) {
             applySpeed(NORMAL_SPEED);
             return;
         }
@@ -438,18 +438,18 @@ public class Timethrottle extends Module {
     }
 
     private void updateChunkTracking() {
-        if (mc.world == null || mc.player == null) {
+        if (mc.level == null || mc.player == null) {
             chunkDataValid = false;
             return;
         }
 
-        int px = mc.player.getChunkPos().x;
-        int pz = mc.player.getChunkPos().z;
+        int px = mc.player.chunkPosition().x();
+        int pz = mc.player.chunkPosition().z();
         cachedPlayerAreaLoaded = true;
         outer:
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
-                if (!mc.world.getChunkManager().isChunkLoaded(px + dx, pz + dz)) {
+                if (!mc.level.getChunkSource().hasChunk(px + dx, pz + dz)) {
                     cachedPlayerAreaLoaded = false;
                     break outer;
                 }
@@ -510,17 +510,17 @@ public class Timethrottle extends Module {
 
     private SafetyReason detectSafetyReason() {
         if (mc.player.hurtTime > 0) return SafetyReason.HURT;
-        if (detectSwing.get() && mc.player.handSwingTicks > 0) return SafetyReason.ATTACKING;
+        if (detectSwing.get() && mc.player.swingTime > 0) return SafetyReason.ATTACKING;
 
         int range = safetyRange.get();
         if (range <= 0) return SafetyReason.NONE;
 
-        Box box = mc.player.getBoundingBox().expand(range);
+        AABB box = mc.player.getBoundingBox().inflate(range);
 
-        if (!mc.world.getEntitiesByClass(HostileEntity.class, box, Entity::isAlive).isEmpty())
+        if (!mc.level.getEntitiesOfClass(Monster.class, box, Entity::isAlive).isEmpty())
             return SafetyReason.HOSTILE_NEARBY;
 
-        if (!mc.world.getEntitiesByClass(PlayerEntity.class, box, p -> p != mc.player && p.isAlive()).isEmpty())
+        if (!mc.level.getEntitiesOfClass(Player.class, box, p -> p != mc.player && p.isAlive()).isEmpty())
             return SafetyReason.PLAYER_NEARBY;
 
         return SafetyReason.NONE;
@@ -536,7 +536,7 @@ public class Timethrottle extends Module {
         double smoothing = (desired < currentSpeed)
             ? slowDownSmoothing.get()
             : speedUpSmoothing.get();
-        currentSpeed = MathHelper.lerp(1.0 - smoothing, currentSpeed, desired);
+        currentSpeed = Mth.lerp(1.0 - smoothing, currentSpeed, desired);
         applySpeed(currentSpeed);
     }
 
@@ -547,20 +547,20 @@ public class Timethrottle extends Module {
     }
 
     private int getPlayerPing() {
-        if (mc.getNetworkHandler() == null || mc.player == null) return 0;
-        PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
+        if (mc.getConnection() == null || mc.player == null) return 0;
+        PlayerInfo entry = mc.getConnection().getPlayerInfo(mc.player.getUUID());
         return entry != null ? entry.getLatency() : 0;
     }
 
     private int countUnloadedChunks() {
-        if (mc.world == null || mc.player == null) return 0;
+        if (mc.level == null || mc.player == null) return 0;
         int unloaded     = 0;
-        int viewDistance = mc.options.getClampedViewDistance();
-        int cx           = mc.player.getChunkPos().x;
-        int cz           = mc.player.getChunkPos().z;
+        int viewDistance = mc.options.getEffectiveRenderDistance();
+        int cx           = mc.player.chunkPosition().x();
+        int cz           = mc.player.chunkPosition().z();
         for (int dx = -viewDistance; dx <= viewDistance; dx++) {
             for (int dz = -viewDistance; dz <= viewDistance; dz++) {
-                if (!mc.world.getChunkManager().isChunkLoaded(cx + dx, cz + dz)) {
+                if (!mc.level.getChunkSource().hasChunk(cx + dx, cz + dz)) {
                     unloaded++;
                 }
             }

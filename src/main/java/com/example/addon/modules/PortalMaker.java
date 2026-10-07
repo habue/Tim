@@ -26,23 +26,22 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.behavior.IPathingBehavior;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.process.IBaritoneProcess;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
 
 public class PortalMaker extends Module {
 
@@ -245,8 +244,8 @@ public class PortalMaker extends Module {
     private boolean portalLitDetected = false;
     private int     dimensionChangeCooldown = 0;
     private RecycleState recycleState = RecycleState.IDLE;
-    private Vec3d   recycleTarget    = null;
-    private Vec3d   stepOutTarget    = null;
+    private Vec3   recycleTarget    = null;
+    private Vec3   stepOutTarget    = null;
     private int     recycleWaitTimer = 0;
     private boolean wasRecyclePressed = false;
 
@@ -262,21 +261,21 @@ public class PortalMaker extends Module {
 
     // ── Safe Block State Helper ────────────────────────────────────
     private BlockState getSafeBlockState(BlockPos pos) {
-        if (mc.world == null) return Blocks.AIR.getDefaultState();
+        if (mc.level == null) return Blocks.AIR.defaultBlockState();
         try {
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) {
-                return Blocks.AIR.getDefaultState();
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) {
+                return Blocks.AIR.defaultBlockState();
             }
-            return mc.world.getBlockState(pos);
+            return mc.level.getBlockState(pos);
         } catch (Exception e) {
-            return Blocks.AIR.getDefaultState();
+            return Blocks.AIR.defaultBlockState();
         }
     }
 
     private boolean isChunkSafe(BlockPos pos) {
-        if (mc.world == null || mc.player == null) return false;
+        if (mc.level == null || mc.player == null) return false;
         try {
-            return mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4);
+            return mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4);
         } catch (Exception e) {
             return false;
         }
@@ -317,7 +316,7 @@ public class PortalMaker extends Module {
             } catch (Exception ignored) {}
         }
 
-        if (mc.player == null || mc.world == null) { toggle(); return; }
+        if (mc.player == null || mc.level == null) { toggle(); return; }
 
         if (!hasItemInHotbar(Items.OBSIDIAN)) {
             int total = countItem(Items.OBSIDIAN);
@@ -336,48 +335,48 @@ public class PortalMaker extends Module {
             warning("No throwaway blocks (dirt, cobblestone, etc.) found! Baritone may fail to bridge to the portal.");
         }
 
-        Direction facing = mc.player.getHorizontalFacing();
-        Direction right  = facing.rotateYClockwise();
+        Direction facing = mc.player.getDirection();
+        Direction right  = facing.getClockWise();
 
-        BlockPos feet     = mc.player.getBlockPos();
+        BlockPos feet     = mc.player.blockPosition();
         boolean  adjusted = false;
 
-        if (!mc.world.getBlockState(feet.down()).isFullCube(mc.world, feet.down())) {
-            feet     = feet.up();
+        if (!mc.level.getBlockState(feet.below()).isCollisionShapeFullBlock(mc.level, feet.below())) {
+            feet     = feet.above();
             adjusted = true;
         }
 
-        BlockPos origin = feet.offset(facing, 2).offset(right, -1);
+        BlockPos origin = feet.relative(facing, 2).relative(right, -1);
 
-        portalFramePositions.add(origin.offset(right, 1));
-        portalFramePositions.add(origin.offset(right, 2));
-        portalFramePositions.add(origin.up(1));
-        portalFramePositions.add(origin.up(2));
-        portalFramePositions.add(origin.up(3));
-        portalFramePositions.add(origin.offset(right, 3).up(1));
-        portalFramePositions.add(origin.offset(right, 3).up(2));
-        portalFramePositions.add(origin.offset(right, 3).up(3));
-        portalFramePositions.add(origin.offset(right, 1).up(4));
-        portalFramePositions.add(origin.offset(right, 2).up(4));
+        portalFramePositions.add(origin.relative(right, 1));
+        portalFramePositions.add(origin.relative(right, 2));
+        portalFramePositions.add(origin.above(1));
+        portalFramePositions.add(origin.above(2));
+        portalFramePositions.add(origin.above(3));
+        portalFramePositions.add(origin.relative(right, 3).above(1));
+        portalFramePositions.add(origin.relative(right, 3).above(2));
+        portalFramePositions.add(origin.relative(right, 3).above(3));
+        portalFramePositions.add(origin.relative(right, 1).above(4));
+        portalFramePositions.add(origin.relative(right, 2).above(4));
 
         if (adjusted) {
-            BlockPos stepPos = feet.offset(facing, 1);
-            if (mc.world.getBlockState(stepPos).isReplaceable()) portalFramePositions.add(stepPos);
+            BlockPos stepPos = feet.relative(facing, 1);
+            if (mc.level.getBlockState(stepPos).canBeReplaced()) portalFramePositions.add(stepPos);
         }
 
         boolean blocked = portalFramePositions.stream()
-            .anyMatch(p -> !mc.world.getBlockState(p).isReplaceable());
+            .anyMatch(p -> !mc.level.getBlockState(p).canBeReplaced());
         if (blocked) { error("Portal area is obstructed. Move slightly and try again."); toggle(); return; }
 
         long existing = portalFramePositions.stream()
-            .filter(p -> mc.world.getBlockState(p).getBlock() == Blocks.OBSIDIAN)
+            .filter(p -> mc.level.getBlockState(p).getBlock() == Blocks.OBSIDIAN)
             .count();
         if (existing >= 9) {
             info("Portal frame looks complete → attempting to light it.");
             placementIndex = portalFramePositions.size();
         }
 
-        lastDimension = mc.world.getRegistryKey().getValue().toString();
+        lastDimension = mc.level.dimension().identifier().toString();
         builtDimension = lastDimension;
 
         selectHotbarItem(Items.OBSIDIAN);
@@ -406,9 +405,9 @@ public class PortalMaker extends Module {
     // ── Event Handlers ─────────────────────────────────────────────
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        if (mc.player.isDead() || !mc.player.isAlive()) {
+        if (mc.player.isDeadOrDying() || !mc.player.isAlive()) {
             stopMovement();
             toggle();
             return;
@@ -423,14 +422,14 @@ public class PortalMaker extends Module {
         }
 
         try { 
-            if (mc.world.getRegistryKey() == null) return; 
+            if (mc.level.dimension() == null) return; 
         } catch (Exception ignored) { 
             return; 
         }
         
         String currentDim;
         try {
-            currentDim = mc.world.getRegistryKey().getValue().toString();
+            currentDim = mc.level.dimension().identifier().toString();
         } catch (Exception e) { 
             return; 
         }
@@ -494,20 +493,20 @@ public class PortalMaker extends Module {
                 placementIndex = portalFramePositions.size();
                 break;
             }
-            if (mc.world.getBlockState(bp).getBlock() != Blocks.OBSIDIAN) {
+            if (mc.level.getBlockState(bp).getBlock() != Blocks.OBSIDIAN) {
                 placementIndex = i;
                 break;
             }
         }
 
         if (placementIndex < portalFramePositions.size()) {
-            if (mc.player.getInventory().main.isEmpty()) return;
+            if (mc.player.getInventory().getNonEquipmentItems().isEmpty()) return;
 
-            if (!mc.player.getMainHandStack().isOf(Items.OBSIDIAN)) {
+            if (!mc.player.getMainHandItem().is(Items.OBSIDIAN)) {
                 FindItemResult obsidian = InvUtils.find(Items.OBSIDIAN);
                 if (!obsidian.found()) { error("No obsidian found -> disabled."); toggle(); return; }
-                if (obsidian.isHotbar()) mc.player.getInventory().selectedSlot = obsidian.slot();
-                else InvUtils.move().from(obsidian.slot()).toHotbar(mc.player.getInventory().selectedSlot);
+                if (obsidian.isHotbar()) mc.player.getInventory().setSelectedSlot(obsidian.slot());
+                else InvUtils.move().from(obsidian.slot()).toHotbar(mc.player.getInventory().getSelectedSlot());
             }
 
             tickTimer++;
@@ -517,11 +516,11 @@ public class PortalMaker extends Module {
             BlockPos target = portalFramePositions.get(placementIndex);
             if (!isChunkSafe(target)) return;
             
-            if (mc.world.getBlockState(target).getBlock() == Blocks.OBSIDIAN) { placementIndex++; return; }
+            if (mc.level.getBlockState(target).getBlock() == Blocks.OBSIDIAN) { placementIndex++; return; }
 
-            if (!mc.world.getBlockState(target).isReplaceable()) {
-                mc.interactionManager.attackBlock(target, mc.player.getHorizontalFacing().getOpposite());
-                mc.player.swingHand(Hand.MAIN_HAND);
+            if (!mc.level.getBlockState(target).canBeReplaced()) {
+                mc.gameMode.startDestroyBlock(target, mc.player.getDirection().getOpposite());
+                mc.player.swing(InteractionHand.MAIN_HAND);
                 return;
             }
 
@@ -531,17 +530,17 @@ public class PortalMaker extends Module {
 
             if (airPlace.get()) {
                 // Air place trick: target the air block directly from the top
-                hit = new BlockHitResult(Vec3d.ofCenter(target), Direction.UP, target, false);
+                hit = new BlockHitResult(Vec3.atCenterOf(target), Direction.UP, target, false);
             } else {
                 // Vanilla placement: find an adjacent solid block to click against
                 Direction placeDir = null;
                 BlockPos neighborPos = null;
                 
                 for (Direction dir : Direction.values()) {
-                    BlockPos neighbor = target.offset(dir);
+                    BlockPos neighbor = target.relative(dir);
                     BlockState neighborState = getSafeBlockState(neighbor);
                     // Look for a solid, full block to click against
-                    if (!neighborState.isReplaceable() && neighborState.isFullCube(mc.world, neighbor)) {
+                    if (!neighborState.canBeReplaced() && neighborState.isCollisionShapeFullBlock(mc.level, neighbor)) {
                         placeDir = dir.getOpposite();
                         neighborPos = neighbor;
                         break;
@@ -550,7 +549,7 @@ public class PortalMaker extends Module {
                 
                 if (neighborPos != null) {
                     // Click the exact face of the neighboring solid block
-                    Vec3d hitVec = Vec3d.ofCenter(neighborPos).add(Vec3d.of(placeDir.getVector()).multiply(0.5));
+                    Vec3 hitVec = Vec3.atCenterOf(neighborPos).add(Vec3.atLowerCornerOf(placeDir.getUnitVec3i()).scale(0.5));
                     hit = new BlockHitResult(hitVec, placeDir, neighborPos, false);
                     lookTarget = neighborPos; // Rotate to look directly at the solid block
                 } else {
@@ -563,8 +562,8 @@ public class PortalMaker extends Module {
 
             final BlockHitResult finalHit = hit;
             Rotations.rotate(Rotations.getYaw(lookTarget), Rotations.getPitch(lookTarget), () -> {
-                mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, finalHit);
-                mc.player.swingHand(Hand.MAIN_HAND);
+                mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, finalHit);
+                mc.player.swing(InteractionHand.MAIN_HAND);
             });
             placementIndex++;
             return;
@@ -575,15 +574,15 @@ public class PortalMaker extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.world == null) return;
+        if (mc.level == null) return;
         
         if (render.get() && !portalFramePositions.isEmpty()) {
             for (int i = placementIndex; i < portalFramePositions.size(); i++) {
                 BlockPos pos = portalFramePositions.get(i);
                 if (!isChunkSafe(pos)) continue;
-                if (!mc.world.getBlockState(pos).isReplaceable()) continue;
+                if (!mc.level.getBlockState(pos).canBeReplaced()) continue;
 
-                Box box = new Box(pos);
+                AABB box = new AABB(pos);
                 
                 if (renderMode.get() == RenderMode.PULSE) {
                     renderPulseBox(event, box, lineColor.get());
@@ -622,13 +621,13 @@ public class PortalMaker extends Module {
             return;
         }
 
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             recycleState = RecycleState.IDLE;
             stopMovement();
             return;
         }
 
-        if (mc.player.isDead() || !mc.player.isAlive()) {
+        if (mc.player.isDeadOrDying() || !mc.player.isAlive()) {
             recycleState = RecycleState.IDLE;
             stopMovement();
             toggle();
@@ -684,12 +683,12 @@ public class PortalMaker extends Module {
     private void startRecycle() {
         if (!useBaritone.get()) return;
         
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             recycleState = RecycleState.IDLE;
             return;
         }
         
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         if (!isChunkSafe(playerPos)) {
             dimensionChangeCooldown = 10; 
             return;
@@ -702,28 +701,28 @@ public class PortalMaker extends Module {
     }
 
     private void setupRecycleTarget() {
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             recycleTarget = null;
             stepOutTarget = null;
             return;
         }
 
-        BlockPos pos = mc.player.getBlockPos();
+        BlockPos pos = mc.player.blockPosition();
         
-        if (!getSafeBlockState(pos).isOf(Blocks.NETHER_PORTAL)) {
-            for (BlockPos p : BlockPos.iterate(pos.add(-5, -5, -5), pos.add(5, 5, 5))) {
+        if (!getSafeBlockState(pos).is(Blocks.NETHER_PORTAL)) {
+            for (BlockPos p : BlockPos.betweenClosed(pos.offset(-5, -5, -5), pos.offset(5, 5, 5))) {
                 if (!isChunkSafe(p)) continue; 
-                if (getSafeBlockState(p).isOf(Blocks.NETHER_PORTAL)) {
+                if (getSafeBlockState(p).is(Blocks.NETHER_PORTAL)) {
                     pos = p;
                     break;
                 }
             }
         }
 
-        if (getSafeBlockState(pos).isOf(Blocks.NETHER_PORTAL)) {
+        if (getSafeBlockState(pos).is(Blocks.NETHER_PORTAL)) {
             BlockState state = getSafeBlockState(pos);
-            Direction.Axis axis = state.contains(net.minecraft.state.property.Properties.HORIZONTAL_AXIS) 
-                ? state.get(net.minecraft.state.property.Properties.HORIZONTAL_AXIS) 
+            Direction.Axis axis = state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_AXIS) 
+                ? state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_AXIS) 
                 : Direction.Axis.X;
 
             int minC = axis == Direction.Axis.X ? pos.getX() : pos.getZ();
@@ -735,7 +734,7 @@ public class PortalMaker extends Module {
                     ? new BlockPos(minC - 1, pos.getY(), pos.getZ()) 
                     : new BlockPos(pos.getX(), pos.getY(), minC - 1);
                 if (!isChunkSafe(checkPos)) break;
-                if (!getSafeBlockState(checkPos).isOf(Blocks.NETHER_PORTAL)) break;
+                if (!getSafeBlockState(checkPos).is(Blocks.NETHER_PORTAL)) break;
                 minC--;
             }
 
@@ -745,46 +744,46 @@ public class PortalMaker extends Module {
                     ? new BlockPos(maxC + 1, pos.getY(), pos.getZ()) 
                     : new BlockPos(pos.getX(), pos.getY(), maxC + 1);
                 if (!isChunkSafe(checkPos)) break;
-                if (!getSafeBlockState(checkPos).isOf(Blocks.NETHER_PORTAL)) break;
+                if (!getSafeBlockState(checkPos).is(Blocks.NETHER_PORTAL)) break;
                 maxC++;
             }
 
             double mid = (minC + maxC + 1) / 2.0;
             if (axis == Direction.Axis.X) {
-                recycleTarget = new Vec3d(mid, pos.getY(), pos.getZ() + 0.5);
-                Vec3d o1 = recycleTarget.add(0, 0, 2.0);
-                Vec3d o2 = recycleTarget.add(0, 0, -2.0);
+                recycleTarget = new Vec3(mid, pos.getY(), pos.getZ() + 0.5);
+                Vec3 o1 = recycleTarget.add(0, 0, 2.0);
+                Vec3 o2 = recycleTarget.add(0, 0, -2.0);
                 if (isAreaClear(o1)) stepOutTarget = o1;
                 else if (isAreaClear(o2)) stepOutTarget = o2;
                 else stepOutTarget = o1;
             } else {
-                recycleTarget = new Vec3d(pos.getX() + 0.5, pos.getY(), mid);
-                Vec3d o1 = recycleTarget.add(2.0, 0, 0);
-                Vec3d o2 = recycleTarget.add(-2.0, 0, 0);
+                recycleTarget = new Vec3(pos.getX() + 0.5, pos.getY(), mid);
+                Vec3 o1 = recycleTarget.add(2.0, 0, 0);
+                Vec3 o2 = recycleTarget.add(-2.0, 0, 0);
                 if (isAreaClear(o1)) stepOutTarget = o1;
                 else if (isAreaClear(o2)) stepOutTarget = o2;
                 else stepOutTarget = o1;
             }
         } else {
-            recycleTarget = mc.player.getPos();
-            stepOutTarget = mc.player.getPos().add(mc.player.getRotationVector().multiply(-2.0));
+            recycleTarget = mc.player.position();
+            stepOutTarget = mc.player.position().add(mc.player.getLookAngle().scale(-2.0));
         }
     }
 
-    private boolean isAreaClear(Vec3d pos) {
-        if (mc.world == null) return false;
-        BlockPos bp = BlockPos.ofFloored(pos);
+    private boolean isAreaClear(Vec3 pos) {
+        if (mc.level == null) return false;
+        BlockPos bp = BlockPos.containing(pos);
         if (!isChunkSafe(bp)) return false;
-        return getSafeBlockState(bp).isReplaceable() && getSafeBlockState(bp.up()).isReplaceable();
+        return getSafeBlockState(bp).canBeReplaced() && getSafeBlockState(bp.above()).canBeReplaced();
     }
 
     // ── Portal Helpers ─────────────────────────────────────────────
     private boolean isPlayerInPortal() {
-        if (mc.player == null || mc.world == null) return false;
-        BlockPos feet = mc.player.getBlockPos();
+        if (mc.player == null || mc.level == null) return false;
+        BlockPos feet = mc.player.blockPosition();
         if (!isChunkSafe(feet)) return false;
-        return getSafeBlockState(feet).isOf(Blocks.NETHER_PORTAL) ||
-               getSafeBlockState(feet.up()).isOf(Blocks.NETHER_PORTAL);
+        return getSafeBlockState(feet).is(Blocks.NETHER_PORTAL) ||
+               getSafeBlockState(feet.above()).is(Blocks.NETHER_PORTAL);
     }
 
     private void lightPortal() {
@@ -796,11 +795,11 @@ public class PortalMaker extends Module {
 
         for (BlockPos pos : new BlockPos[]{bottom1, bottom2}) {
             if (!isChunkSafe(pos)) continue;
-            if (getSafeBlockState(pos.up()).isAir()) {
+            if (getSafeBlockState(pos.above()).isAir()) {
                 Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-                    BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos).add(0, 0.5, 0), Direction.UP, pos, false);
-                    mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-                    mc.player.swingHand(Hand.MAIN_HAND);
+                    BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos).add(0, 0.5, 0), Direction.UP, pos, false);
+                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
                 });
                 break;
             }
@@ -809,15 +808,15 @@ public class PortalMaker extends Module {
 
     private boolean isPortalLit() {
         if (portalFramePositions.size() < 2) return false;
-        BlockPos p1 = portalFramePositions.get(0).up();
-        BlockPos p2 = portalFramePositions.get(1).up();
+        BlockPos p1 = portalFramePositions.get(0).above();
+        BlockPos p2 = portalFramePositions.get(1).above();
 
         if (!isChunkSafe(p1) || !isChunkSafe(p2)) {
             return portalLitDetected;
         }
 
-        return mc.world.getBlockState(p1).getBlock() == Blocks.NETHER_PORTAL ||
-               mc.world.getBlockState(p2).getBlock() == Blocks.NETHER_PORTAL;
+        return mc.level.getBlockState(p1).getBlock() == Blocks.NETHER_PORTAL ||
+               mc.level.getBlockState(p2).getBlock() == Blocks.NETHER_PORTAL;
     }
 
     // ── Baritone Movement Engine ───────────────────────────────────
@@ -826,9 +825,9 @@ public class PortalMaker extends Module {
         moveTo(getPortalOpeningCenter());
     }
 
-    private void moveTo(Vec3d target) {
-        if (mc.player == null || mc.world == null || target == null) return;
-        if (mc.player.isDead() || !mc.player.isAlive()) {
+    private void moveTo(Vec3 target) {
+        if (mc.player == null || mc.level == null || target == null) return;
+        if (mc.player.isDeadOrDying() || !mc.player.isAlive()) {
             stopMovement();
             toggle();
             return;
@@ -836,7 +835,7 @@ public class PortalMaker extends Module {
 
         // Use BlockPos.ofFloored to accurately get the block coordinates from the Vec3d.
         // This prevents rounding errors that could target the block adjacent to the portal.
-        BlockPos targetPos = BlockPos.ofFloored(target.x, target.y, target.z);
+        BlockPos targetPos = BlockPos.containing(target.x, target.y, target.z);
         
         // Use the Baritone API directly to avoid command manager chat spam (prevents coordinate leaks)
         IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
@@ -849,10 +848,10 @@ public class PortalMaker extends Module {
         }
     }
 
-    private Vec3d getPortalOpeningCenter() {
-        BlockPos p1 = portalFramePositions.get(0).up();
-        BlockPos p2 = portalFramePositions.get(1).up();
-        return new Vec3d(
+    private Vec3 getPortalOpeningCenter() {
+        BlockPos p1 = portalFramePositions.get(0).above();
+        BlockPos p2 = portalFramePositions.get(1).above();
+        return new Vec3(
             (p1.getX() + p2.getX()) / 2.0 + 0.5,
              p1.getY(),
             (p1.getZ() + p2.getZ()) / 2.0 + 0.5
@@ -862,12 +861,12 @@ public class PortalMaker extends Module {
     // ── Placement Helpers ──────────────────────────────────────────
     private void stopMovement() {
         if (mc.options == null) return;
-        mc.options.forwardKey.setPressed(false);
-        mc.options.backKey.setPressed(false);
-        mc.options.leftKey.setPressed(false);
-        mc.options.rightKey.setPressed(false);
-        mc.options.sprintKey.setPressed(false);
-        mc.options.sneakKey.setPressed(false);
+        mc.options.keyUp.setDown(false);
+        mc.options.keyDown.setDown(false);
+        mc.options.keyLeft.setDown(false);
+        mc.options.keyRight.setDown(false);
+        mc.options.keySprint.setDown(false);
+        mc.options.keyShift.setDown(false);
         
         // Stop Baritone pathing silently
         try {
@@ -880,7 +879,7 @@ public class PortalMaker extends Module {
     }
 
     // ── Render Helpers ─────────────────────────────────────────────
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int    layers    = glowLayers.get();
         double spread    = glowSpread.get();
         int    baseAlpha = glowBaseAlpha.get();
@@ -889,7 +888,7 @@ public class PortalMaker extends Module {
             double expansion  = spread * i;
             int    layerAlpha = Math.max(4, (int) (baseAlpha * (1.0 - (double) (i - 1) / layers)));
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -915,7 +914,7 @@ public class PortalMaker extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -924,7 +923,7 @@ public class PortalMaker extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -955,8 +954,8 @@ public class PortalMaker extends Module {
     private boolean selectHotbarItem(Item targetItem) {
         if (mc.player == null) return false;
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() == targetItem) {
-                mc.player.getInventory().selectedSlot = i;
+            if (mc.player.getInventory().getItem(i).getItem() == targetItem) {
+                mc.player.getInventory().setSelectedSlot(i);
                 return true;
             }
         }
@@ -966,7 +965,7 @@ public class PortalMaker extends Module {
     private boolean hasItemInHotbar(Item targetItem) {
         if (mc.player == null) return false;
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() == targetItem) return true;
+            if (mc.player.getInventory().getItem(i).getItem() == targetItem) return true;
         }
         return false;
     }
@@ -979,11 +978,11 @@ public class PortalMaker extends Module {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
-            if (stack.isOf(targetItem)) count += stack.getCount();
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.is(targetItem)) count += stack.getCount();
         }
-        ItemStack offhand = mc.player.getOffHandStack();
-        if (offhand.isOf(targetItem)) count += offhand.getCount();
+        ItemStack offhand = mc.player.getOffhandItem();
+        if (offhand.is(targetItem)) count += offhand.getCount();
         return count;
     }
 
@@ -994,7 +993,7 @@ public class PortalMaker extends Module {
     private boolean hasThrowawayBlocks() {
         if (mc.player == null) return false;
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             Item item = stack.getItem();
             if (item == Items.DIRT || item == Items.COBBLESTONE || item == Items.NETHERRACK || 
                 item == Items.STONE || item == Items.GRASS_BLOCK || item == Items.DEEPSLATE ||
@@ -1007,7 +1006,7 @@ public class PortalMaker extends Module {
     }
 
     private boolean isMovingManually() {
-        if (mc.currentScreen != null) return false;
+        if (mc.screen != null) return false;
         return Input.isKeyPressed(GLFW.GLFW_KEY_W) || 
                Input.isKeyPressed(GLFW.GLFW_KEY_A) ||
                Input.isKeyPressed(GLFW.GLFW_KEY_S) || 

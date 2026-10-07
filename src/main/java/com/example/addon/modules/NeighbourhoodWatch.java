@@ -31,14 +31,14 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.WireframeEntityRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 
 public class NeighbourhoodWatch extends Module {
 
@@ -60,12 +60,12 @@ public class NeighbourhoodWatch extends Module {
 
     public enum DangerSound {
         Off(null),
-        WardenRoar(SoundEvents.ENTITY_WARDEN_ROAR),
-        DragonGrowl(SoundEvents.ENTITY_ENDER_DRAGON_GROWL),
-        RavagerRoar(SoundEvents.ENTITY_RAVAGER_ROAR),
-        EndermanStare(SoundEvents.ENTITY_ENDERMAN_STARE),
-        ElderGuardianCurse(SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE),
-        WitherDeath(SoundEvents.ENTITY_WITHER_DEATH);
+        WardenRoar(SoundEvents.WARDEN_ROAR),
+        DragonGrowl(SoundEvents.ENDER_DRAGON_GROWL),
+        RavagerRoar(SoundEvents.RAVAGER_ROAR),
+        EndermanStare(SoundEvents.ENDERMAN_STARE),
+        ElderGuardianCurse(SoundEvents.ELDER_GUARDIAN_CURSE),
+        WitherDeath(SoundEvents.WITHER_DEATH);
 
         public final SoundEvent event;
         DangerSound(SoundEvent event) { this.event = event; }
@@ -275,7 +275,7 @@ public class NeighbourhoodWatch extends Module {
 
     private boolean anyPlayerNearby = false;
     private int actionBarTicks = 0;
-    private Text actionBarMessage = null;
+    private Component actionBarMessage = null;
 
     public NeighbourhoodWatch() {
         super(Tim.CATEGORY, "neighbourhood-watch",
@@ -286,9 +286,9 @@ public class NeighbourhoodWatch extends Module {
     public void onActivate() {
         resetState();
         updateFriendEnemySets();
-        if (mc.player != null && mc.player.networkHandler != null) {
-            mc.player.networkHandler.getPlayerList().forEach(entry -> {
-                String name = entry.getProfile().getName();
+        if (mc.player != null && mc.player.connection != null) {
+            mc.player.connection.getOnlinePlayers().forEach(entry -> {
+                String name = entry.getProfile().name();
                 if (name != null && !name.isEmpty()) playersInTab.add(name);
             });
         }
@@ -310,7 +310,7 @@ public class NeighbourhoodWatch extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (tickDisconnectOnPlayer()) return;
         tickPlayerTracking();
@@ -320,7 +320,7 @@ public class NeighbourhoodWatch extends Module {
 
     private void tickActionBar() {
         if (actionBarTicks > 0 && actionBarMessage != null) {
-            mc.inGameHud.setOverlayMessage(actionBarMessage, false);
+            mc.gui.setOverlayMessage(actionBarMessage, false);
             actionBarTicks--;
             if (actionBarTicks == 0) {
                 actionBarMessage = null;
@@ -338,7 +338,7 @@ public class NeighbourhoodWatch extends Module {
         Set<Integer> newlyActive = new HashSet<>();
         Map<Integer, Integer> newSpectralColors = new HashMap<>();
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (isLocalPlayer(player) || player.isSpectator()) continue;
             if (mc.player.distanceTo(player) > trackRange.get()) continue;
 
@@ -387,7 +387,7 @@ public class NeighbourhoodWatch extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         if (trackPlayers.get() && highlightMode.get() == HighlightMode.Spectral) {
             for (Map.Entry<Integer, Integer> entry : spectralColors.entrySet()) {
@@ -396,7 +396,7 @@ public class NeighbourhoodWatch extends Module {
         }
 
         if (trackPlayers.get() && highlightMode.get() == HighlightMode.Wireframe) {
-            for (PlayerEntity player : mc.world.getPlayers()) {
+            for (Player player : mc.level.players()) {
                 if (isLocalPlayer(player)) continue;
                 if (!activelyOutlined.contains(player.getId())) continue;
 
@@ -419,29 +419,29 @@ public class NeighbourhoodWatch extends Module {
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        if (event.packet instanceof EntityStatusS2CPacket statusPacket) {
-            if (statusPacket.getStatus() == 35) {
-                Entity entity = statusPacket.getEntity(mc.world);
-                if (entity instanceof PlayerEntity player && !isLocalPlayer(player)) {
+        if (event.packet instanceof ClientboundEntityEventPacket statusPacket) {
+            if (statusPacket.getEventId() == 35) {
+                Entity entity = statusPacket.getEntity(mc.level);
+                if (entity instanceof Player player && !isLocalPlayer(player)) {
                     handleTotemPop(player);
                 }
             }
         }
 
-        if (!(event.packet instanceof PlayerListS2CPacket packet)) return;
+        if (!(event.packet instanceof ClientboundPlayerInfoUpdatePacket packet)) return;
 
-        for (PlayerListS2CPacket.Entry entry : packet.getEntries()) {
+        for (ClientboundPlayerInfoUpdatePacket.Entry entry : packet.entries()) {
             if (entry.profile() == null) continue;
-            String name = entry.profile().getName();
+            String name = entry.profile().name();
             if (name == null || name.isEmpty()) continue;
 
-            if (packet.getActions().contains(PlayerListS2CPacket.Action.ADD_PLAYER)) {
+            if (packet.actions().contains(ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER)) {
                 if (playersInTab.add(name)) {
                     handleTabListChange(name, "joined");
                 }
-            } else if (packet.getActions().contains(PlayerListS2CPacket.Action.UPDATE_LISTED) && !entry.listed()) {
+            } else if (packet.actions().contains(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED) && !entry.listed()) {
                 if (playersInTab.remove(name)) {
                     handleTabListChange(name, "left");
                 }
@@ -451,21 +451,21 @@ public class NeighbourhoodWatch extends Module {
 
     @EventHandler
     private void onReceiveMessage(meteordevelopment.meteorclient.events.game.ReceiveMessageEvent event) {
-        if (mc.player == null || mc.player.networkHandler == null) return;
+        if (mc.player == null || mc.player.connection == null) return;
         if (ignoreKeywords.get().isEmpty()) return;
 
         if (filterMode.get() == FilterMode.AutoIgnore) {
             parseMessageForAutoIgnore(event.getMessage().getString());
         } else {
             String censored = censorMessage(event.getMessage().getString());
-            if (censored != null) event.setMessage(Text.literal(censored));
+            if (censored != null) event.setMessage(Component.literal(censored));
         }
     }
 
     private boolean tickDisconnectOnPlayer() {
         if (!disconnectOnPlayer.get()) return false;
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (isLocalPlayer(player) || player.isCreative() || player.isSpectator()) continue;
             if (ignoreFriendsOnDisconnect.get()  && isFriend(player.getName().getString())) continue;
             if (ignoreProxiesOnDisconnect.get()  && isProxy(player.getName().getString()))  continue;
@@ -487,7 +487,7 @@ public class NeighbourhoodWatch extends Module {
         anyPlayerNearby = false;
         Set<Integer> playersInVisualRangeThisTick = new HashSet<>();
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (isLocalPlayer(player) || player.isSpectator()) continue;
             if (mc.player.distanceTo(player) > trackRange.get()) continue;
 
@@ -528,7 +528,7 @@ public class NeighbourhoodWatch extends Module {
                 if (alertNotifications.get()) {
                     info(msg);
 
-                    actionBarMessage = Text.literal(msg).formatted(Formatting.RED, Formatting.BOLD);
+                    actionBarMessage = Component.literal(msg).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
                     actionBarTicks = 40 + (int)(Math.random() * 61);
                 }
 
@@ -545,7 +545,7 @@ public class NeighbourhoodWatch extends Module {
 
         for (Integer id : notifiedPlayers) {
             if (!playersInVisualRangeThisTick.contains(id)) {
-                PlayerEntity player = (PlayerEntity) mc.world.getEntityById(id);
+                Player player = (Player) mc.level.getEntity(id);
                 if (player != null) {
                     String name = player.getName().getString();
                     PlayerStatus status = getPlayerStatusPublic(name);
@@ -560,7 +560,7 @@ public class NeighbourhoodWatch extends Module {
                     if (shouldNotify && alertNotifications.get()) {
                         info("§e%s has left visual range.", name);
 
-                        actionBarMessage = Text.literal(name + " left visual range!").formatted(Formatting.YELLOW, Formatting.BOLD);
+                        actionBarMessage = Component.literal(name + " left visual range!").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD);
                         actionBarTicks = 40 + (int)(Math.random() * 61);
                     }
                 }
@@ -571,7 +571,7 @@ public class NeighbourhoodWatch extends Module {
         notifiedPlayers.addAll(playersInVisualRangeThisTick);
     }
 
-    private void handleTotemPop(PlayerEntity player) {
+    private void handleTotemPop(Player player) {
         if (!alertNotifications.get()) return;
 
         String name = player.getName().getString();
@@ -582,7 +582,7 @@ public class NeighbourhoodWatch extends Module {
 
         info("§d" + popMsg);
 
-        actionBarMessage = Text.literal(popMsg).formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD);
+        actionBarMessage = Component.literal(popMsg).withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD);
         actionBarTicks = 40 + (int)(Math.random() * 61);
     }
 
@@ -656,7 +656,7 @@ public class NeighbourhoodWatch extends Module {
         if (ignoredThisSession.contains(sender.toLowerCase())) return;
         if (findKeyword(messageBody) == null) return;
 
-        mc.player.networkHandler.sendChatCommand("ignorehard " + sender);
+        mc.player.connection.sendCommand("ignorehard " + sender);
         ignoredThisSession.add(sender.toLowerCase());
         info("Auto-ignored %s (keyword match).", sender);
     }
@@ -691,24 +691,24 @@ public class NeighbourhoodWatch extends Module {
     }
 
     private void disconnect(String reason) {
-        if (mc.player != null && mc.player.networkHandler != null) {
-            mc.player.networkHandler.getConnection().disconnect(Text.literal(reason));
+        if (mc.player != null && mc.player.connection != null) {
+            mc.player.connection.getConnection().disconnect(Component.literal(reason));
         }
         this.toggle();
     }
 
-    private boolean isLocalPlayer(PlayerEntity player) {
+    private boolean isLocalPlayer(Player player) {
         if (player == null || mc.player == null) return false;
         if (player == mc.player) return true;
         if (player.getId() == mc.player.getId()) return true;
 
-        if (player.getUuid() != null && mc.player.getUuid() != null) {
-            if (player.getUuid().equals(mc.player.getUuid())) return true;
+        if (player.getUUID() != null && mc.player.getUUID() != null) {
+            if (player.getUUID().equals(mc.player.getUUID())) return true;
         }
 
         if (player.getGameProfile() != null && mc.player.getGameProfile() != null) {
-            String name1 = player.getGameProfile().getName();
-            String name2 = mc.player.getGameProfile().getName();
+            String name1 = player.getGameProfile().name();
+            String name2 = mc.player.getGameProfile().name();
             if (name1 != null && name2 != null && name1.equalsIgnoreCase(name2)) return true;
         }
 

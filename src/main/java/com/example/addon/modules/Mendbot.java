@@ -16,13 +16,12 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ArmorItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class Mendbot extends Module {
     public enum MendTarget { Elytra, Tools, Armour, All }
@@ -259,26 +258,26 @@ public class Mendbot extends Module {
         }
 
         if (mc.player != null) {
-            savedHelmet = mc.player.getEquippedStack(EquipmentSlot.HEAD).copy();
+            savedHelmet = mc.player.getItemBySlot(EquipmentSlot.HEAD).copy();
         }
     }
 
     @Override
     public void onDeactivate() {
         if (mc.player != null) {
-            if (mc.player.getEquippedStack(EquipmentSlot.HEAD).isOf(Items.GOLDEN_HELMET)) {
+            if (mc.player.getItemBySlot(EquipmentSlot.HEAD).is(Items.GOLDEN_HELMET)) {
                 restoreHelmet(savedHelmet);
             }
             if (mendSource.get() == MendSource.Mining && !baritoneStopCommand.get().isEmpty()) {
-                mc.player.networkHandler.sendChatMessage(baritoneStopCommand.get());
+                mc.player.connection.sendChat(baritoneStopCommand.get());
             }
         }
     }
 
     private int findItemSlot(Item item) {
         if (mc.player == null) return -1;
-        for (int i = 0; i < mc.player.getInventory().size(); i++) {
-            if (mc.player.getInventory().getStack(i).isOf(item)) {
+        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+            if (mc.player.getInventory().getItem(i).is(item)) {
                 return i;
             }
         }
@@ -291,7 +290,7 @@ public class Mendbot extends Module {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.EXPERIENCE_BOTTLE)) {
+            if (mc.player.getInventory().getItem(i).is(Items.EXPERIENCE_BOTTLE)) {
                 count++;
             }
         }
@@ -300,10 +299,10 @@ public class Mendbot extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        if (goldenHelmet.get() && mendSource.get() == MendSource.Mining && mc.player.age % 10 == 0) {
-            if (!mc.player.getEquippedStack(EquipmentSlot.HEAD).isOf(Items.GOLDEN_HELMET)) {
+        if (goldenHelmet.get() && mendSource.get() == MendSource.Mining && mc.player.tickCount % 10 == 0) {
+            if (!mc.player.getItemBySlot(EquipmentSlot.HEAD).is(Items.GOLDEN_HELMET)) {
                 int goldHelmSlot = findItemSlot(Items.GOLDEN_HELMET);
                 if (goldHelmSlot != -1) InvUtils.move().from(goldHelmSlot).toArmor(3);
             }
@@ -313,7 +312,7 @@ public class Mendbot extends Module {
             String cmd = useSmartMining.get() ? getSmartOreCommand() : baritoneStartCommand.get();
             if (cmd != null && !cmd.isEmpty()) {
                 info("Starting Baritone: " + cmd);
-                mc.player.networkHandler.sendChatMessage(cmd);
+                mc.player.connection.sendChat(cmd);
                 startCommandSent = true;
             }
         }
@@ -465,14 +464,14 @@ public class Mendbot extends Module {
                 if (foundSlot == -1) {
                     if (baritoneStopCommand.get() != null && !baritoneStopCommand.get().isEmpty()) {
                         info("All items repaired. Stopping Baritone.");
-                        mc.player.networkHandler.sendChatMessage(baritoneStopCommand.get());
+                        mc.player.connection.sendChat(baritoneStopCommand.get());
                     }
                     miningState = MiningState.FINISHED;
                     if (autoDisable.get()) toggle();
                     return;
                 }
                 
-                ItemStack stack = mc.player.getInventory().getStack(foundSlot);
+                ItemStack stack = mc.player.getInventory().getItem(foundSlot);
                 if (stack.isEmpty()) {
                     return;
                 }
@@ -496,12 +495,12 @@ public class Mendbot extends Module {
                 }
                 
                 ItemStack equipped = targetIsOffhand ? 
-                    mc.player.getOffHandStack() : 
-                    (targetEquipSlot != null ? mc.player.getEquippedStack(targetEquipSlot) : ItemStack.EMPTY);
+                    mc.player.getOffhandItem() : 
+                    (targetEquipSlot != null ? mc.player.getItemBySlot(targetEquipSlot) : ItemStack.EMPTY);
                     
                 if (!equipped.isEmpty() && equipped.isDamaged()) {
                     miningState = MiningState.REPAIRING;
-                    info("Repairing: " + equipped.getName().getString());
+                    info("Repairing: " + equipped.getHoverName().getString());
                 } else if (equipped.isEmpty()) {
                     miningState = MiningState.SEARCHING;
                 } else {
@@ -510,13 +509,13 @@ public class Mendbot extends Module {
             }
             case REPAIRING -> {
                 ItemStack equipped = targetIsOffhand ? 
-                    mc.player.getOffHandStack() : 
-                    (targetEquipSlot != null ? mc.player.getEquippedStack(targetEquipSlot) : ItemStack.EMPTY);
+                    mc.player.getOffhandItem() : 
+                    (targetEquipSlot != null ? mc.player.getItemBySlot(targetEquipSlot) : ItemStack.EMPTY);
                 
                 if (equipped.isEmpty() || !equipped.isDamaged()) {
                     info("Item repaired. Pausing to swap.");
                     if (!baritonePauseCommand.get().isEmpty()) {
-                        mc.player.networkHandler.sendChatMessage(baritonePauseCommand.get());
+                        mc.player.connection.sendChat(baritonePauseCommand.get());
                     }
                     swapTimer = swapDelay.get();
                     miningState = MiningState.PAUSED;
@@ -529,11 +528,11 @@ public class Mendbot extends Module {
                 }
                 
                 ItemStack equipped = targetIsOffhand ? 
-                    mc.player.getOffHandStack() : 
-                    (targetEquipSlot != null ? mc.player.getEquippedStack(targetEquipSlot) : ItemStack.EMPTY);
+                    mc.player.getOffhandItem() : 
+                    (targetEquipSlot != null ? mc.player.getItemBySlot(targetEquipSlot) : ItemStack.EMPTY);
                     
                 if (!equipped.isEmpty()) {
-                    int emptySlot = mc.player.getInventory().getEmptySlot();
+                    int emptySlot = mc.player.getInventory().getFreeSlot();
                     if (targetIsOffhand) {
                         if (emptySlot != -1) InvUtils.move().fromOffhand().to(emptySlot);
                         else InvUtils.move().fromOffhand().toHotbar(0);
@@ -549,7 +548,7 @@ public class Mendbot extends Module {
                 targetIsOffhand = false;
                 
                 if (!baritoneResumeCommand.get().isEmpty()) {
-                    mc.player.networkHandler.sendChatMessage(baritoneResumeCommand.get());
+                    mc.player.connection.sendChat(baritoneResumeCommand.get());
                 }
                 miningState = MiningState.SEARCHING;
                 swapTimer = actionDelay.get();
@@ -568,7 +567,7 @@ public class Mendbot extends Module {
         if (mc.player == null) return -1;
 
         if (doElytra) {
-            int slot = findDamagedItem(stack -> stack.isOf(Items.ELYTRA));
+            int slot = findDamagedItem(stack -> stack.is(Items.ELYTRA));
             if (slot != -1) return slot;
         }
 
@@ -579,9 +578,9 @@ public class Mendbot extends Module {
 
         if (doArmour) {
             int slot = findDamagedItem(stack -> {
-                if (stack.getItem() instanceof ArmorItem && !stack.isOf(Items.ELYTRA)) {
+                if (stack.is(net.minecraft.tags.ItemTags.ARMOR_ENCHANTABLE) && !stack.is(Items.ELYTRA)) {
                     if (goldenHelmet.get()) {
-                        var eq = stack.get(DataComponentTypes.EQUIPPABLE);
+                        var eq = stack.get(DataComponents.EQUIPPABLE);
                         return eq != null && eq.slot() != EquipmentSlot.HEAD;
                     }
                     return true;
@@ -595,8 +594,8 @@ public class Mendbot extends Module {
     }
 
     private int findDamagedItem(java.util.function.Predicate<ItemStack> predicate) {
-        for (int i = 0; i < mc.player.getInventory().size(); i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (predicate.test(stack) && stack.isDamaged()) {
                 return i;
             }
@@ -605,11 +604,11 @@ public class Mendbot extends Module {
     }
 
     private EquipmentSlot getTargetEquipmentSlot(ItemStack stack) {
-        if (stack.isOf(Items.ELYTRA)) {
+        if (stack.is(Items.ELYTRA)) {
             return EquipmentSlot.CHEST;
         }
-        if (stack.getItem() instanceof ArmorItem) {
-            var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+        if (stack.is(net.minecraft.tags.ItemTags.ARMOR_ENCHANTABLE)) {
+            var equippable = stack.get(DataComponents.EQUIPPABLE);
             if (equippable != null) {
                 return equippable.slot();
             }
@@ -629,18 +628,18 @@ public class Mendbot extends Module {
 
     private void equipItem(int fromSlot, EquipmentSlot slot, boolean offhand) {
         if (offhand) {
-            ItemStack offHand = mc.player.getOffHandStack();
+            ItemStack offHand = mc.player.getOffhandItem();
             if (!offHand.isEmpty()) {
-                int emptySlot = mc.player.getInventory().getEmptySlot();
+                int emptySlot = mc.player.getInventory().getFreeSlot();
                 if (emptySlot != -1) InvUtils.move().fromOffhand().to(emptySlot);
                 else InvUtils.move().fromOffhand().toHotbar(0);
             }
             InvUtils.move().from(fromSlot).toOffhand();
         } else if (slot != null) {
             int armorIdx = armorSlotIndex(slot);
-            ItemStack currentArmor = mc.player.getEquippedStack(slot);
+            ItemStack currentArmor = mc.player.getItemBySlot(slot);
             if (!currentArmor.isEmpty()) {
-                int emptySlot = mc.player.getInventory().getEmptySlot();
+                int emptySlot = mc.player.getInventory().getFreeSlot();
                 if (emptySlot != -1) InvUtils.move().fromArmor(armorIdx).to(emptySlot);
                 else InvUtils.move().fromArmor(armorIdx).toHotbar(0);
             }
@@ -650,10 +649,10 @@ public class Mendbot extends Module {
 
     // --- Safety ---
     private void restoreHelmet(ItemStack original) {
-        ItemStack current = mc.player.getEquippedStack(EquipmentSlot.HEAD);
-        if (ItemStack.areItemsAndComponentsEqual(current, original)) return;
+        ItemStack current = mc.player.getItemBySlot(EquipmentSlot.HEAD);
+        if (ItemStack.isSameItemSameComponents(current, original)) return;
         if (!current.isEmpty()) {
-            int empty = mc.player.getInventory().getEmptySlot();
+            int empty = mc.player.getInventory().getFreeSlot();
             if (empty != -1) InvUtils.move().fromArmor(3).to(empty);
             else {
                 int same = findItemSlot(current.getItem());
@@ -663,8 +662,8 @@ public class Mendbot extends Module {
         }
         if (!original.isEmpty()) {
             int saved = -1;
-            for (int i = 0; i < mc.player.getInventory().size(); i++) {
-                if (ItemStack.areItemsAndComponentsEqual(mc.player.getInventory().getStack(i), original)) { saved = i; break; }
+            for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+                if (ItemStack.isSameItemSameComponents(mc.player.getInventory().getItem(i), original)) { saved = i; break; }
             }
             if (saved != -1) InvUtils.move().from(saved).toArmor(3);
         }
@@ -672,9 +671,9 @@ public class Mendbot extends Module {
 
     // --- Bottle Logic ---
     private boolean handleElytraMending() {
-        ItemStack chest = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (!chest.isOf(Items.ELYTRA) || !chest.isDamaged()) {
-            int elytra = findDamagedItem(stack -> stack.isOf(Items.ELYTRA));
+        ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (!chest.is(Items.ELYTRA) || !chest.isDamaged()) {
+            int elytra = findDamagedItem(stack -> stack.is(Items.ELYTRA));
             if (elytra != -1) { InvUtils.move().from(elytra).toArmor(2); return true; } 
             else return false;
         }
@@ -683,10 +682,10 @@ public class Mendbot extends Module {
     }
 
     private boolean handleToolMending() {
-        ItemStack offHand = mc.player.getOffHandStack();
+        ItemStack offHand = mc.player.getOffhandItem();
         if (isTool(offHand)) {
             if (offHand.isDamaged()) { throwXpBottles(); return true; } 
-            else { int slot = mc.player.getInventory().getEmptySlot(); if (slot != -1) { InvUtils.move().fromOffhand().to(slot); return true; } }
+            else { int slot = mc.player.getInventory().getFreeSlot(); if (slot != -1) { InvUtils.move().fromOffhand().to(slot); return true; } }
         }
         int damaged = findDamagedItem(this::isTool);
         if (damaged != -1) { InvUtils.move().from(damaged).toOffhand(); return true; }
@@ -695,16 +694,16 @@ public class Mendbot extends Module {
 
     private boolean handleArmourMending() {
         for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
-            ItemStack stack = mc.player.getEquippedStack(slot);
-            if (stack.getItem() instanceof ArmorItem && !stack.isOf(Items.ELYTRA) && stack.isDamaged()) { throwXpBottles(); return true; }
+            ItemStack stack = mc.player.getItemBySlot(slot);
+            if (stack.is(net.minecraft.tags.ItemTags.ARMOR_ENCHANTABLE) && !stack.is(Items.ELYTRA) && stack.isDamaged()) { throwXpBottles(); return true; }
         }
-        int damaged = findDamagedItem(stack -> stack.getItem() instanceof ArmorItem && !stack.isOf(Items.ELYTRA));
+        int damaged = findDamagedItem(stack -> stack.is(net.minecraft.tags.ItemTags.ARMOR_ENCHANTABLE) && !stack.is(Items.ELYTRA));
         if (damaged != -1) {
-            ItemStack stack = mc.player.getInventory().getStack(damaged);
-            var eq = stack.get(DataComponentTypes.EQUIPPABLE);
+            ItemStack stack = mc.player.getInventory().getItem(damaged);
+            var eq = stack.get(DataComponents.EQUIPPABLE);
             if (eq != null) {
                 EquipmentSlot s = eq.slot();
-                ItemStack eqd = mc.player.getEquippedStack(s);
+                ItemStack eqd = mc.player.getItemBySlot(s);
                 if (eqd.isEmpty() || !eqd.isDamaged()) { InvUtils.move().from(damaged).toArmor(armorSlotIndex(s)); return true; }
             }
         }
@@ -714,31 +713,31 @@ public class Mendbot extends Module {
     private boolean isTool(ItemStack stack) {
         if (stack.isEmpty()) return false;
         Item i = stack.getItem();
-        return i instanceof net.minecraft.item.PickaxeItem || i instanceof net.minecraft.item.SwordItem || i instanceof net.minecraft.item.AxeItem || i instanceof net.minecraft.item.ShovelItem || i == Items.BOW || i == Items.FLINT_AND_STEEL || i == Items.SHIELD || i == Items.TRIDENT || i == Items.FISHING_ROD;
+        return stack.is(net.minecraft.tags.ItemTags.PICKAXES) || stack.is(net.minecraft.tags.ItemTags.SWORDS) || i instanceof net.minecraft.world.item.AxeItem || i instanceof net.minecraft.world.item.ShovelItem || i == Items.BOW || i == Items.FLINT_AND_STEEL || i == Items.SHIELD || i == Items.TRIDENT || i == Items.FISHING_ROD;
     }
 
     private void throwXpBottles() {
-        float yaw = mc.player.getYaw() + (float) (Math.random() * 0.2 - 0.1);
+        float yaw = mc.player.getYRot() + (float) (Math.random() * 0.2 - 0.1);
         float pitch = 90 + (float) (Math.random() * 0.2 - 0.1);
         Rotations.rotate(yaw, pitch, () -> {
             int xp = findItemSlot(Items.EXPERIENCE_BOTTLE);
             if (xp == -1) return;
             if (isHotbar(xp)) {
                 InvUtils.swap(xp, true);
-                for (int i = 0; i < packetsPerBurst.get(); i++) mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                for (int i = 0; i < packetsPerBurst.get(); i++) mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
                 InvUtils.swapBack();
             } else {
-                int empty = mc.player.getInventory().getEmptySlot();
+                int empty = mc.player.getInventory().getFreeSlot();
                 if (empty != -1) {
                     InvUtils.move().from(xp).toHotbar(empty);
                     InvUtils.swap(empty, true);
-                    for (int i = 0; i < packetsPerBurst.get(); i++) mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                    for (int i = 0; i < packetsPerBurst.get(); i++) mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
                     InvUtils.swapBack();
                     InvUtils.move().from(empty).to(xp);
                 } else {
-                    int prev = mc.player.getInventory().selectedSlot;
+                    int prev = mc.player.getInventory().getSelectedSlot();
                     InvUtils.move().from(xp).toHotbar(prev);
-                    for (int i = 0; i < packetsPerBurst.get(); i++) mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                    for (int i = 0; i < packetsPerBurst.get(); i++) mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
                     InvUtils.move().from(prev).to(xp);
                 }
             }

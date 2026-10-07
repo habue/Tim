@@ -12,10 +12,10 @@ import meteordevelopment.meteorclient.systems.hud.HudElement;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 
 public class PositionHud extends HudElement {
 
@@ -26,7 +26,7 @@ public class PositionHud extends HudElement {
         PositionHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
@@ -148,25 +148,25 @@ public class PositionHud extends HudElement {
         boolean rightAlign  = align == Alignment.Right;
         boolean centerAlign = align == Alignment.Center;
 
-        BlockPos pos = mc.player.getBlockPos();
+        BlockPos pos = mc.player.blockPosition();
         int bx = pos.getX(), by = pos.getY(), bz = pos.getZ();
 
         // ── Dimension ─────────────────────────────────────────────────────────────
-        boolean inNether = mc.world != null && mc.world.getRegistryKey() == World.NETHER;
-        boolean inEnd    = mc.world != null && mc.world.getRegistryKey() == World.END;
+        boolean inNether = mc.level != null && mc.level.dimension() == Level.NETHER;
+        boolean inEnd    = mc.level != null && mc.level.dimension() == Level.END;
 
         String dimLabel = null, dimValue = null;
-        if (showDimension.get() && mc.world != null) {
+        if (showDimension.get() && mc.level != null) {
             dimLabel = "Dim: ";
             dimValue = inNether ? "Nether" : inEnd ? "End" : "Overworld";
         }
 
         // ── Biome ─────────────────────────────────────────────────────────────────
         String biomeLabel = null, biomeValue = null;
-        if (showBiome.get() && mc.world != null) {
+        if (showBiome.get() && mc.level != null) {
             biomeLabel = "Biome: ";
-            biomeValue = mc.world.getBiome(pos).getKey()
-                .map(RegistryKey::getValue)
+            biomeValue = mc.level.getBiome(pos).unwrapKey()
+                .map(ResourceKey::identifier)
                 .map(id -> {
                     // Convert "minecraft:dark_forest" → "Dark Forest"
                     String[] parts = id.getPath().split("_");

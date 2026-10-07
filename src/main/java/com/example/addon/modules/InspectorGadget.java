@@ -22,29 +22,29 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.behavior.IPathingBehavior;
 import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.process.IBaritoneProcess;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.block.enums.ChestType;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.registry.Registries;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
 
 public class InspectorGadget extends Module {
 
@@ -309,8 +309,8 @@ public class InspectorGadget extends Module {
     }
 
     private void closeScreen() {
-        if (mc.currentScreen != null && !(mc.currentScreen instanceof InventoryScreen)) {
-            mc.player.closeHandledScreen();
+        if (mc.screen != null && !(mc.screen instanceof InventoryScreen)) {
+            mc.player.closeContainer();
         }
     }
 
@@ -335,7 +335,7 @@ public class InspectorGadget extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (currentState != ScanState.SETUP) {
             boolean pausePressed = pauseKey.get().isPressed();
@@ -398,8 +398,8 @@ public class InspectorGadget extends Module {
     }
 
     private void addTile() {
-        if (mc.crosshairTarget != null && mc.crosshairTarget.getType() == HitResult.Type.BLOCK) {
-            BlockPos target = ((BlockHitResult) mc.crosshairTarget).getBlockPos();
+        if (mc.hitResult != null && mc.hitResult.getType() == HitResult.Type.BLOCK) {
+            BlockPos target = ((BlockHitResult) mc.hitResult).getBlockPos();
             pathTiles.add(target);
             info("Added tile %d", pathTiles.size());
         } else {
@@ -414,9 +414,9 @@ public class InspectorGadget extends Module {
         }
 
         currentPathTarget = pathTiles.get(tileIndex);
-        BlockPos standPos = currentPathTarget.up(); // Stand on top of the tile
-        Vec3d targetPos = Vec3d.ofCenter(standPos);
-        double distance = mc.player.getPos().distanceTo(targetPos);
+        BlockPos standPos = currentPathTarget.above(); // Stand on top of the tile
+        Vec3 targetPos = Vec3.atCenterOf(standPos);
+        double distance = mc.player.position().distanceTo(targetPos);
 
         pathTimeout++;
         if (pathTimeout > 1000) { // 50 seconds timeout
@@ -462,8 +462,8 @@ public class InspectorGadget extends Module {
             for (int y = -range; y <= range; y++) {
                 for (int z = -range; z <= range; z++) {
                     if (x*x + y*y + z*z > range*range) continue;
-                    BlockPos checkPos = center.add(x, y, z);
-                    Block b = mc.world.getBlockState(checkPos).getBlock();
+                    BlockPos checkPos = center.offset(x, y, z);
+                    Block b = mc.level.getBlockState(checkPos).getBlock();
 
                     if (b instanceof ShulkerBoxBlock) {
                         shulkerCount++;
@@ -479,12 +479,12 @@ public class InspectorGadget extends Module {
         // Greedy nearest-neighbour sort from the player's current position to avoid zigzag.
         List<BlockPos> ordered = new ArrayList<>();
         Set<BlockPos> remaining = new HashSet<>(localTargets);
-        Vec3d cursor = mc.player.getPos();
+        Vec3 cursor = mc.player.position();
         while (!remaining.isEmpty()) {
             BlockPos nearest = null;
             double nearestDist = Double.MAX_VALUE;
             for (BlockPos p : remaining) {
-                double d = p.getSquaredDistance(cursor);
+                double d = p.distToCenterSqr(cursor);
                 if (d < nearestDist) {
                     nearestDist = d;
                     nearest = p;
@@ -492,7 +492,7 @@ public class InspectorGadget extends Module {
             }
             ordered.add(nearest);
             remaining.remove(nearest);
-            cursor = Vec3d.ofCenter(nearest);
+            cursor = Vec3.atCenterOf(nearest);
         }
         localTargets.clear();
         localTargets.addAll(ordered);
@@ -509,7 +509,7 @@ public class InspectorGadget extends Module {
         }
 
         BlockPos blockTarget = localTargets.get(targetIndex);
-        Block block = mc.world.getBlockState(blockTarget).getBlock();
+        Block block = mc.level.getBlockState(blockTarget).getBlock();
         StorageTarget storageFilter = targetStorage.get();
 
         if (!storageFilter.contains(block) || visitedTargets.contains(blockTarget)) {
@@ -517,7 +517,7 @@ public class InspectorGadget extends Module {
             return;
         }
 
-        double distanceToChest = mc.player.getPos().distanceTo(Vec3d.ofCenter(blockTarget));
+        double distanceToChest = mc.player.position().distanceTo(Vec3.atCenterOf(blockTarget));
 
         if (currentInteractTile == null || !isStandable(currentInteractTile)) {
             currentInteractTile = null;
@@ -525,14 +525,14 @@ public class InspectorGadget extends Module {
             
             if (validTiles.isEmpty()) {
                 // Fallback for elevated chests: Path to the block directly beneath the chest
-                BlockPos fallbackTile = blockTarget.down();
-                while (fallbackTile.getY() > mc.world.getBottomY() && mc.world.getBlockState(fallbackTile).getCollisionShape(mc.world, fallbackTile).isEmpty()) {
-                    fallbackTile = fallbackTile.down();
+                BlockPos fallbackTile = blockTarget.below();
+                while (fallbackTile.getY() > mc.level.getMinY() && mc.level.getBlockState(fallbackTile).getCollisionShape(mc.level, fallbackTile).isEmpty()) {
+                    fallbackTile = fallbackTile.below();
                 }
                 
                 // If the block beneath the chest is standable, use it
-                if (isStandable(fallbackTile.up())) {
-                    currentInteractTile = fallbackTile.up();
+                if (isStandable(fallbackTile.above())) {
+                    currentInteractTile = fallbackTile.above();
                 } else {
                     // If we can't find a tile to stand on, but we are already close enough, just open it!
                     if (distanceToChest <= 4.2) {
@@ -547,15 +547,15 @@ public class InspectorGadget extends Module {
                     return;
                 }
             } else {
-                validTiles.sort(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getBlockPos())));
+                validTiles.sort(Comparator.comparingDouble(pos -> pos.distSqr(mc.player.blockPosition())));
                 currentInteractTile = validTiles.get(0);
             }
             pathTimeout = 0;
             issuedMoveCommand = false;
         }
 
-        Vec3d targetPos = Vec3d.ofCenter(currentInteractTile);
-        double distanceToTile = mc.player.getPos().distanceTo(targetPos);
+        Vec3 targetPos = Vec3.atCenterOf(currentInteractTile);
+        double distanceToTile = mc.player.position().distanceTo(targetPos);
 
         pathTimeout++;
         if (pathTimeout > 1000) { // 50 seconds timeout
@@ -586,10 +586,10 @@ public class InspectorGadget extends Module {
     private void handleOpeningTarget() {
         BlockPos blockTarget = localTargets.get(targetIndex);
 
-        Vec3d eye = mc.player.getEyePos();
-        Vec3d blockCenter = Vec3d.ofCenter(blockTarget);
+        Vec3 eye = mc.player.getEyePosition();
+        Vec3 blockCenter = Vec3.atCenterOf(blockTarget);
 
-        Vec3d diff = eye.subtract(blockCenter);
+        Vec3 diff = eye.subtract(blockCenter);
 
         Direction side;
         double ax = Math.abs(diff.x), ay = Math.abs(diff.y), az = Math.abs(diff.z);
@@ -601,22 +601,22 @@ public class InspectorGadget extends Module {
             side = diff.z > 0 ? Direction.SOUTH : Direction.NORTH;
         }
 
-        Vec3d hitVec = Vec3d.ofCenter(blockTarget)
-            .add(Vec3d.of(side.getOpposite().getVector()).multiply(0.5));
+        Vec3 hitVec = Vec3.atCenterOf(blockTarget)
+            .add(Vec3.atLowerCornerOf(side.getOpposite().getUnitVec3i()).scale(0.5));
 
         // Use strictly horizontal difference for Yaw to prevent wild swinging when the chest is directly above/below
-        mc.player.setYaw((float) Math.toDegrees(Math.atan2(-(blockCenter.x - eye.x), blockCenter.z - eye.z)));
-        mc.player.setHeadYaw(mc.player.getYaw());
+        mc.player.setYRot((float) Math.toDegrees(Math.atan2(-(blockCenter.x - eye.x), blockCenter.z - eye.z)));
+        mc.player.setYHeadRot(mc.player.getYRot());
         
         // Use 3D difference for Pitch, safely clamped
         double dist3d = blockCenter.distanceTo(eye);
         if (dist3d > 0) {
-            mc.player.setPitch((float) -Math.toDegrees(Math.asin(Math.max(-1.0, Math.min(1.0, (blockCenter.y - eye.y) / dist3d)))));
+            mc.player.setXRot((float) -Math.toDegrees(Math.asin(Math.max(-1.0, Math.min(1.0, (blockCenter.y - eye.y) / dist3d)))));
         }
 
         BlockHitResult hitResult = new BlockHitResult(hitVec, side, blockTarget, false);
-        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hitResult);
-        mc.player.swingHand(Hand.MAIN_HAND);
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
+        mc.player.swing(InteractionHand.MAIN_HAND);
 
         currentState = ScanState.WAITING;
         waitTimer = 0;
@@ -625,9 +625,9 @@ public class InspectorGadget extends Module {
     private void handleWaiting() {
         waitTimer++;
 
-        if (mc.currentScreen instanceof HandledScreen<?> && !(mc.currentScreen instanceof InventoryScreen)) {
+        if (mc.screen instanceof AbstractContainerScreen<?> && !(mc.screen instanceof InventoryScreen)) {
             if (waitTimer >= openDelay.get()) {
-                mc.player.closeHandledScreen();
+                mc.player.closeContainer();
                 openedCount++;
                 markVisited(localTargets.get(targetIndex));
                 targetIndex++;
@@ -662,7 +662,7 @@ public class InspectorGadget extends Module {
             try {
                 Identifier soundId = Identifier.tryParse(soundSetting.id);
                 if (soundId != null) {
-                    SoundEvent sound = Registries.SOUND_EVENT.get(soundId);
+                    SoundEvent sound = BuiltInRegistries.SOUND_EVENT.getValue(soundId);
                     if (sound != null) mc.player.playSound(sound, 1.0f, 1.0f);
                 }
             } catch (Exception ignored) {}
@@ -684,13 +684,13 @@ public class InspectorGadget extends Module {
 
     private void stopMovement() {
         if (mc.options == null) return;
-        mc.options.forwardKey.setPressed(false);
-        mc.options.backKey.setPressed(false);
-        mc.options.leftKey.setPressed(false);
-        mc.options.rightKey.setPressed(false);
-        mc.options.jumpKey.setPressed(false);
-        mc.options.sprintKey.setPressed(false);
-        mc.options.sneakKey.setPressed(false);
+        mc.options.keyUp.setDown(false);
+        mc.options.keyDown.setDown(false);
+        mc.options.keyLeft.setDown(false);
+        mc.options.keyRight.setDown(false);
+        mc.options.keyJump.setDown(false);
+        mc.options.keySprint.setDown(false);
+        mc.options.keyShift.setDown(false);
         
         try {
             IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
@@ -721,15 +721,15 @@ public class InspectorGadget extends Module {
     // ─────────────────────────── Validation Helpers ───────────────────────────
 
     private boolean isStandable(BlockPos pos) {
-        BlockState feet = mc.world.getBlockState(pos);
-        BlockState head = mc.world.getBlockState(pos.up());
-        BlockState floor = mc.world.getBlockState(pos.down());
+        BlockState feet = mc.level.getBlockState(pos);
+        BlockState head = mc.level.getBlockState(pos.above());
+        BlockState floor = mc.level.getBlockState(pos.below());
 
         // Feet & head must be passable (no collision).
-        if (!feet.getCollisionShape(mc.world, pos).isEmpty()) return false;
-        if (!head.getCollisionShape(mc.world, pos.up()).isEmpty()) return false;
+        if (!feet.getCollisionShape(mc.level, pos).isEmpty()) return false;
+        if (!head.getCollisionShape(mc.level, pos.above()).isEmpty()) return false;
         // Floor must have a collision shape (any solid-enough surface counts).
-        if (floor.getCollisionShape(mc.world, pos.down()).isEmpty()) return false;
+        if (floor.getCollisionShape(mc.level, pos.below()).isEmpty()) return false;
         
         // Do not choose a spot on top of storage blocks
         Block floorBlock = floor.getBlock();
@@ -748,7 +748,7 @@ public class InspectorGadget extends Module {
                 if (dx == 0 && dz == 0) continue;
                 if (dx * dx + dz * dz > 5) continue; // Roughly circular radius of 2
                 for (int dy = -5; dy <= 5; dy++) {
-                    BlockPos tilePos = blockPos.add(dx, dy, dz);
+                    BlockPos tilePos = blockPos.offset(dx, dy, dz);
                     if (isStandable(tilePos)) {
                         tiles.add(tilePos);
                     }
@@ -761,13 +761,13 @@ public class InspectorGadget extends Module {
     // Marks a chest as visited, including its double chest half if it has one.
     private void markVisited(BlockPos pos) {
         visitedTargets.add(pos);
-        BlockState state = mc.world.getBlockState(pos);
-        if (state.contains(Properties.CHEST_TYPE)) {
-            ChestType type = state.get(Properties.CHEST_TYPE);
+        BlockState state = mc.level.getBlockState(pos);
+        if (state.hasProperty(BlockStateProperties.CHEST_TYPE)) {
+            ChestType type = state.getValue(BlockStateProperties.CHEST_TYPE);
             if (type != ChestType.SINGLE) {
-                Direction facing = state.get(Properties.HORIZONTAL_FACING);
-                Direction connectedDir = type == ChestType.LEFT ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
-                BlockPos otherHalf = pos.offset(connectedDir);
+                Direction facing = state.getValue(BlockStateProperties.HORIZONTAL_FACING);
+                Direction connectedDir = type == ChestType.LEFT ? facing.getClockWise() : facing.getCounterClockWise();
+                BlockPos otherHalf = pos.relative(connectedDir);
                 visitedTargets.add(otherHalf);
             }
         }
@@ -786,13 +786,13 @@ public class InspectorGadget extends Module {
         for (int i = 0; i < pathTiles.size(); i++) {
             BlockPos pos = pathTiles.get(i);
 
-            Box flatTileBox = new Box(
+            AABB flatTileBox = new AABB(
                 pos.getX(), pos.getY() + 1.0, pos.getZ(),
                 pos.getX() + 1.0, pos.getY() + 1.02, pos.getZ() + 1.0
             );
             
             double height = Math.min((i + 1) * 0.25, 3.0);
-            Box pillarBox = new Box(
+            AABB pillarBox = new AABB(
                 pos.getX() + 0.4, pos.getY() + 1.0, pos.getZ() + 0.4,
                 pos.getX() + 0.6, pos.getY() + 1.0 + height, pos.getZ() + 0.6
             );
@@ -816,7 +816,7 @@ public class InspectorGadget extends Module {
         if (currentState != ScanState.SETUP && !localTargets.isEmpty()) {
             for (BlockPos pos : localTargets) {
                 if (visitedTargets.contains(pos)) continue;
-                Box box = new Box(pos);
+                AABB box = new AABB(pos);
                 
                 if (mode == HighlightMode.GLOW) {
                     renderGlowLayers(event, box, cColor);
@@ -834,7 +834,7 @@ public class InspectorGadget extends Module {
 
     // ── Render Helpers ──
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get();
         double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
@@ -843,7 +843,7 @@ public class InspectorGadget extends Module {
             double expansion = spread * i;
             double t = (double)(i - 1) / layers;
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - t * t)));
-            event.renderer.box(box.expand(expansion), withAlpha(color, layerAlpha), withAlpha(color, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(expansion), withAlpha(color, layerAlpha), withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
 
@@ -865,7 +865,7 @@ public class InspectorGadget extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -875,7 +875,7 @@ public class InspectorGadget extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion), withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(expansion), withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
     }

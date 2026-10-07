@@ -21,12 +21,12 @@ import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.ProfileComponent;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ResolvableProfile;
 
 public class LastSeenPlayerHud extends HudElement {
 
@@ -37,15 +37,15 @@ public class LastSeenPlayerHud extends HudElement {
         LastSeenPlayerHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     private static final Map<UUID, ItemStack> CACHED_HEADS = new ConcurrentHashMap<>();
 
     public static ItemStack getPlayerHead(com.mojang.authlib.GameProfile profile) {
-        if (profile == null || profile.getId() == null) return ItemStack.EMPTY;
-        return CACHED_HEADS.computeIfAbsent(profile.getId(), id -> {
+        if (profile == null || profile.id() == null) return ItemStack.EMPTY;
+        return CACHED_HEADS.computeIfAbsent(profile.id(), id -> {
             ItemStack headStack = new ItemStack(Items.PLAYER_HEAD);
-            headStack.set(DataComponentTypes.PROFILE, new ProfileComponent(profile));
+            headStack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile));
             return headStack;
         });
     }
@@ -176,7 +176,7 @@ public class LastSeenPlayerHud extends HudElement {
     /**
      * Called directly by NeighbourhoodWatch when a player enters tracking range.
      */
-    public void updateLastSeen(PlayerEntity player) {
+    public void updateLastSeen(Player player) {
         String name = player.getName().getString();
         this.lastPlayerName = name;
         this.lastSeenTime = System.currentTimeMillis();
@@ -188,7 +188,7 @@ public class LastSeenPlayerHud extends HudElement {
             : name;
 
         this.headStack = new ItemStack(Items.PLAYER_HEAD);
-        this.headStack.set(DataComponentTypes.PROFILE, new ProfileComponent(player.getGameProfile()));
+        this.headStack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(player.getGameProfile()));
         
         getPlayerHead(player.getGameProfile());
     }
@@ -220,7 +220,7 @@ public class LastSeenPlayerHud extends HudElement {
         NeighbourhoodWatch nw = Modules.get().get(NeighbourhoodWatch.class);
         boolean anyPlayerNearby = nw != null && nw.isActive() && nw.isAnyPlayerNearby();
 
-        if (!inEditor && (mc.player == null || mc.world == null || !anyPlayerNearby)) {
+        if (!inEditor && (mc.player == null || mc.level == null || !anyPlayerNearby)) {
             setSize(0, 0);
             return;
         }

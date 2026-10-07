@@ -9,8 +9,7 @@ import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.item.ItemStack;
-
+import net.minecraft.world.item.ItemStack;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -234,10 +233,10 @@ public class EndAssistantHud extends HudElement {
         
         // Provide dummy stats in the editor so the HUD can be moved around
         if (inEditor && stats.isEmpty()) {
-            if (showElytrasFound.get()) stats.add(new EndStat("Elytras Found", 0, new ItemStack(net.minecraft.item.Items.ELYTRA), StatSeverity.Normal));
-            if (showElytrasNearby.get()) stats.add(new EndStat("Elytras Nearby", 0, new ItemStack(net.minecraft.item.Items.ELYTRA), StatSeverity.Normal));
-            if (showChestsNearby.get()) stats.add(new EndStat("Chests Nearby", 0, new ItemStack(net.minecraft.item.Items.CHEST), StatSeverity.Normal));
-            if (showShulkers.get()) stats.add(new EndStat("Shulkers", 0, new ItemStack(net.minecraft.item.Items.SHULKER_SHELL), StatSeverity.Normal));
+            if (showElytrasFound.get()) stats.add(new EndStat("Elytras Found", 0, new ItemStack(net.minecraft.world.item.Items.ELYTRA), StatSeverity.Normal));
+            if (showElytrasNearby.get()) stats.add(new EndStat("Elytras Nearby", 0, new ItemStack(net.minecraft.world.item.Items.ELYTRA), StatSeverity.Normal));
+            if (showChestsNearby.get()) stats.add(new EndStat("Chests Nearby", 0, new ItemStack(net.minecraft.world.item.Items.CHEST), StatSeverity.Normal));
+            if (showShulkers.get()) stats.add(new EndStat("Shulkers", 0, new ItemStack(net.minecraft.world.item.Items.SHULKER_SHELL), StatSeverity.Normal));
         }
 
         switch (layout.get()) {

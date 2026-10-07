@@ -31,36 +31,36 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.block.entity.EndGatewayBlockEntity;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
-import net.minecraft.entity.decoration.ItemFrameEntity;
-import net.minecraft.entity.mob.ShulkerEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.entity.projectile.ShulkerBulletEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.DisconnectionInfo;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.DisconnectionDetails;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.monster.Shulker;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.ShulkerBullet;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class Gatekeeper extends Module {
 
@@ -115,9 +115,9 @@ public class Gatekeeper extends Module {
     private boolean hasAlertedForCurrentScreen = false;
     private String lastDimension = "";
     private int dimensionChangeCooldown = 0;
-    private final List<ItemFrameEntity> elytraFrameTargets = new ArrayList<>();
-    private final List<ShulkerEntity> shulkerTargets = new ArrayList<>();
-    private final List<ShulkerBulletEntity> bulletTargets = new ArrayList<>();
+    private final List<ItemFrame> elytraFrameTargets = new ArrayList<>();
+    private final List<Shulker> shulkerTargets = new ArrayList<>();
+    private final List<ShulkerBullet> bulletTargets = new ArrayList<>();
 
     // ── Setting Groups ─────────────────────────────────────────────
     private final SettingGroup sgGeneral      = settings.getDefaultGroup();
@@ -423,9 +423,9 @@ public class Gatekeeper extends Module {
         clearAllState();
         // End Assistant State Clear
         if (drinkTimer > 0) {
-            mc.options.useKey.setPressed(false);
+            mc.options.keyUse.setDown(false);
             if (previousDrinkSlot != -1 && mc.player != null) {
-                mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
             }
         }
         GlowingRegistry.clear();
@@ -440,10 +440,10 @@ public class Gatekeeper extends Module {
     // ── Event Handlers ─────────────────────────────────────────────
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (!dirtyChunks.isEmpty()) { scannedChunks.removeAll(dirtyChunks); dirtyChunks.clear(); }
-        BlockPos p = mc.player.getBlockPos();
+        BlockPos p = mc.player.blockPosition();
         scanNewChunks(p.getX() >> 4, p.getZ() >> 4);
         if (portalsDirty) { portalsDirty = false; groupPortals(); }
 
@@ -465,22 +465,22 @@ public class Gatekeeper extends Module {
 
     @EventHandler
     private void onBlockUpdate(BlockUpdateEvent event) {
-        if (mc.world == null) return;
-        PortalType type = (event.newState.isOf(Blocks.END_GATEWAY)) ? PortalType.END_GATEWAY : (event.newState.isOf(Blocks.END_PORTAL)) ? PortalType.END_PORTAL : null;
+        if (mc.level == null) return;
+        PortalType type = (event.newState.is(Blocks.END_GATEWAY)) ? PortalType.END_GATEWAY : (event.newState.is(Blocks.END_PORTAL)) ? PortalType.END_PORTAL : null;
         if (type != null) { portals.put(event.pos, type); portalsDirty = true; }
         else if (portals.remove(event.pos) != null) portalsDirty = true;
     }
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         double beamDistSq = Math.pow(beamRange.get() * 16.0, 2);
 
         PortalStructure nearest = null;
         if (showBeam.get() && onlyNearestBeam.get()) {
             double minSq = Double.MAX_VALUE;
             for (PortalStructure structure : portalStructureMap.values()) {
-                double sq = mc.player.getPos().squaredDistanceTo(structure.boundingBox.getCenter());
+                double sq = mc.player.position().distanceToSqr(structure.boundingBox.getCenter());
                 if (sq < minSq) { minSq = sq; nearest = structure; }
             }
         }
@@ -495,7 +495,7 @@ public class Gatekeeper extends Module {
                 renderGlowLayers(event, structure.boundingBox, color);
                 event.renderer.box(structure.boundingBox, withAlpha(color, 0), color, shapeMode.get(), 0);
             }
-            if (showBeam.get() && (nearest == null || structure == nearest) && mc.player.getPos().squaredDistanceTo(structure.boundingBox.getCenter()) <= beamDistSq) {
+            if (showBeam.get() && (nearest == null || structure == nearest) && mc.player.position().distanceToSqr(structure.boundingBox.getCenter()) <= beamDistSq) {
                 SettingColor beamColor = (renderMode.get() == RenderMode.PULSE) ? pulseColor(color) : color;
                 renderBeams(event, List.of(new BeamData(structure.boundingBox, beamColor)));
             }
@@ -510,13 +510,13 @@ public class Gatekeeper extends Module {
                 BlockPos pos = entry.getKey();
                 TargetType type = entry.getValue();
 
-                if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-                if (mc.world.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
+                if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+                if (mc.level.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
 
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
                 if (!eaValidateBlockType(currentBlock, type)) { toRemove.add(pos); continue; }
 
-                Box renderBox = new Box(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
+                AABB renderBox = new AABB(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
                 SettingColor color = eaGetColor(type);
                 if (color == null) continue;
 
@@ -571,7 +571,7 @@ public class Gatekeeper extends Module {
         ChunkPos cp = new ChunkPos(cx, cz);
         if (scannedChunks.contains(cp)) return false;
 
-        WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(cx, cz);
+        LevelChunk chunk = mc.level.getChunkSource().getChunkNow(cx, cz);
         if (chunk != null) {
             scanChunk(chunk);
             scannedChunks.add(cp);
@@ -580,32 +580,32 @@ public class Gatekeeper extends Module {
         return false;
     }
 
-    private void scanChunk(WorldChunk chunk) {
-        ChunkSection[] sections = chunk.getSectionArray();
-        int chunkX = chunk.getPos().x << 4;
-        int chunkZ = chunk.getPos().z << 4;
+    private void scanChunk(LevelChunk chunk) {
+        LevelChunkSection[] sections = chunk.getSections();
+        int chunkX = chunk.getPos().x() << 4;
+        int chunkZ = chunk.getPos().z() << 4;
 
         for (int i = 0; i < sections.length; i++) {
-            ChunkSection section = sections[i];
-            if (section == null || section.isEmpty()) continue;
+            LevelChunkSection section = sections[i];
+            if (section == null || section.hasOnlyAir()) continue;
 
             // High-performance check: Skip entire section if no target blocks exist in the palette
-            boolean hasPortal = scanEndPortals.get() && section.hasAny(state -> state.isOf(Blocks.END_PORTAL));
-            boolean hasGateway = scanEndGateways.get() && section.hasAny(state -> state.isOf(Blocks.END_GATEWAY));
+            boolean hasPortal = scanEndPortals.get() && section.maybeHas(state -> state.is(Blocks.END_PORTAL));
+            boolean hasGateway = scanEndGateways.get() && section.maybeHas(state -> state.is(Blocks.END_GATEWAY));
             if (!hasPortal && !hasGateway) continue;
 
-            int sectionMinY = (chunk.getBottomSectionCoord() + i) * 16;
+            int sectionMinY = (chunk.getMinSectionY() + i) * 16;
             for (int x = 0; x < 16; x++) {
                 for (int y = 0; y < 16; y++) {
                     for (int z = 0; z < 16; z++) {
                         var state = section.getBlockState(x, y, z);
-                        if (hasPortal && state.isOf(Blocks.END_PORTAL)) {
+                        if (hasPortal && state.is(Blocks.END_PORTAL)) {
                             BlockPos pos = new BlockPos(chunkX + x, sectionMinY + y, chunkZ + z);
                             if (!portals.containsKey(pos)) {
                                 portals.put(pos, PortalType.END_PORTAL);
                                 portalsDirty = true;
                             }
-                        } else if (hasGateway && state.isOf(Blocks.END_GATEWAY)) {
+                        } else if (hasGateway && state.is(Blocks.END_GATEWAY)) {
                             BlockPos pos = new BlockPos(chunkX + x, sectionMinY + y, chunkZ + z);
                             if (!portals.containsKey(pos)) {
                                 portals.put(pos, PortalType.END_GATEWAY);
@@ -627,15 +627,15 @@ public class Gatekeeper extends Module {
             PortalType type = portals.get(startPos);
             Set<BlockPos> component = new HashSet<>();
             Queue<BlockPos> queue = new LinkedList<>();
-            Box structureBox = new Box(startPos);
+            AABB structureBox = new AABB(startPos);
             queue.add(startPos); visited.add(startPos);
             while (!queue.isEmpty()) {
                 BlockPos current = queue.poll();
                 component.add(current);
                 for (Direction dir : Direction.values()) {
-                    BlockPos neighbor = current.offset(dir);
+                    BlockPos neighbor = current.relative(dir);
                     if (portals.get(neighbor) == type && visited.add(neighbor)) {
-                        queue.add(neighbor); structureBox = structureBox.union(new Box(neighbor));
+                        queue.add(neighbor); structureBox = structureBox.minmax(new AABB(neighbor));
                     }
                 }
             }
@@ -643,12 +643,12 @@ public class Gatekeeper extends Module {
             active.add(anchor);
             BlockPos dest = null;
             if (type == PortalType.END_GATEWAY) {
-                BlockEntity be = mc.world.getBlockEntity(anchor);
-                if (be instanceof EndGatewayBlockEntity gateway) {
+                BlockEntity be = mc.level.getBlockEntity(anchor);
+                if (be instanceof TheEndGatewayBlockEntity gateway) {
                     dest = ((EndGatewayBlockEntityAccessor) gateway).getExitPortalPos();
                 }
             }
-            portalStructureMap.put(anchor, new PortalStructure(structureBox.expand(0.02), component, type, dest));
+            portalStructureMap.put(anchor, new PortalStructure(structureBox.inflate(0.02), component, type, dest));
             if (type == PortalType.END_GATEWAY) notifyGateway(anchor, dest);
         }
         portalStructureMap.keySet().retainAll(active);
@@ -657,11 +657,11 @@ public class Gatekeeper extends Module {
     private void cleanupDistantPortals() {
         if (mc.player == null) return;
         double distSq = Math.pow(range.get() * 16 + 64, 2);
-        if (portals.entrySet().removeIf(e -> e.getKey().getSquaredDistance(mc.player.getPos()) > distSq)) portalsDirty = true;
+        if (portals.entrySet().removeIf(e -> e.getKey().distToCenterSqr(mc.player.position()) > distSq)) portalsDirty = true;
 
-        int px = mc.player.getBlockPos().getX() >> 4, pz = mc.player.getBlockPos().getZ() >> 4;
+        int px = mc.player.blockPosition().getX() >> 4, pz = mc.player.blockPosition().getZ() >> 4;
         int rSq = range.get() * range.get();
-        scannedChunks.removeIf(cp -> (cp.x - px) * (cp.x - px) + (cp.z - pz) * (cp.z - pz) > rSq);
+        scannedChunks.removeIf(cp -> (cp.x() - px) * (cp.x() - px) + (cp.z() - pz) * (cp.z() - pz) > rSq);
     }
 
     private void notifyGateway(BlockPos pos, BlockPos dest) {
@@ -678,10 +678,10 @@ public class Gatekeeper extends Module {
 
     // ── Unified Render Helpers ─────────────────────────────────────
     private void renderSpectral(Render3DEvent event, PortalStructure structure, SettingColor color) {
-        event.renderer.box(structure.boundingBox.expand(0.05), withAlpha(color, spectralFillAlpha.get()), withAlpha(color, 255), ShapeMode.Both, 0);
+        event.renderer.box(structure.boundingBox.inflate(0.05), withAlpha(color, spectralFillAlpha.get()), withAlpha(color, 255), ShapeMode.Both, 0);
     }
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get();
         double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
@@ -690,7 +690,7 @@ public class Gatekeeper extends Module {
             double expansion = spread * i;
             int layerAlpha = Math.max(4, (int) (baseAlpha * (1.0 - (double)(i - 1) / layers)));
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -716,7 +716,7 @@ public class Gatekeeper extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -725,7 +725,7 @@ public class Gatekeeper extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -738,21 +738,21 @@ public class Gatekeeper extends Module {
         }
     }
 
-    private void renderBoxBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
+    private void renderBoxBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
         double beamSize = beamWidth.get() / 100.0, centerX = (anchorBox.minX + anchorBox.maxX) / 2.0, centerZ = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int worldBot = mc.world.getBottomY(), worldTop = worldBot + mc.world.getHeight();
-        Box beamBox = new Box(centerX - beamSize, worldBot, centerZ - beamSize, centerX + beamSize, worldTop, centerZ + beamSize);
+        int worldBot = mc.level.getMinY(), worldTop = worldBot + mc.level.getHeight();
+        AABB beamBox = new AABB(centerX - beamSize, worldBot, centerZ - beamSize, centerX + beamSize, worldTop, centerZ + beamSize);
         renderGlowLayers(event, beamBox, color);
         event.renderer.box(beamBox, withAlpha(color, 60), color, ShapeMode.Both, 0);
     }
 
-    private void renderGuardianBeam(Render3DEvent event, Box anchorBox, SettingColor color) {
+    private void renderGuardianBeam(Render3DEvent event, AABB anchorBox, SettingColor color) {
         double cx = (anchorBox.minX + anchorBox.maxX) / 2.0, cz = (anchorBox.minZ + anchorBox.maxZ) / 2.0;
-        int worldBot = mc.world.getBottomY(), worldTop = worldBot + mc.world.getHeight();
+        int worldBot = mc.level.getMinY(), worldTop = worldBot + mc.level.getHeight();
         double radius = guardianRadius.get(), rotationRad = (System.currentTimeMillis() % 6000L) / 6000.0 * Math.PI * 2.0;
         for (int i = 0; i < guardianStrands.get(); i++) {
             double angle = rotationRad + (Math.PI * 2.0 / guardianStrands.get()) * i;
-            Box strandBox = new Box(cx + Math.cos(angle) * radius - 0.01, worldBot, cz + Math.sin(angle) * radius - 0.01, cx + Math.cos(angle) * radius + 0.01, worldTop, cz + Math.sin(angle) * radius + 0.01);
+            AABB strandBox = new AABB(cx + Math.cos(angle) * radius - 0.01, worldBot, cz + Math.sin(angle) * radius - 0.01, cx + Math.cos(angle) * radius + 0.01, worldTop, cz + Math.sin(angle) * radius + 0.01);
             event.renderer.box(strandBox, withAlpha(color, guardianStrandAlpha.get() / 2), withAlpha(color, guardianStrandAlpha.get()), ShapeMode.Both, 0);
         }
     }
@@ -776,10 +776,10 @@ public class Gatekeeper extends Module {
     // ═══════════════════════════════════════════════════════════════
 
     private void eaUpdateScanningLogic() {
-        if (mc.world.getRegistryKey() == null) return;
+        if (mc.level.dimension() == null) return;
         if (dimensionChangeCooldown > 0) { dimensionChangeCooldown--; return; }
 
-        String currDim = mc.world.getRegistryKey().getValue().toString();
+        String currDim = mc.level.dimension().identifier().toString();
         if (!currDim.equals(lastDimension)) {
             dimensionChangeCooldown = DIMENSION_CHANGE_COOLDOWN_TICKS;
             lastDimension = currDim;
@@ -789,7 +789,7 @@ public class Gatekeeper extends Module {
             return;
         }
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int centerChunkX = playerPos.getX() >> 4;
         int centerChunkZ = playerPos.getZ() >> 4;
 
@@ -806,11 +806,11 @@ public class Gatekeeper extends Module {
         if (!trackElytras.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
         Set<Integer> currentIds = new HashSet<>();
 
-        for (ItemFrameEntity frame : mc.world.getEntitiesByClass(ItemFrameEntity.class, searchBox, e -> true)) {
-            if (frame.getHeldItemStack().isOf(Items.ELYTRA)) {
+        for (ItemFrame frame : mc.level.getEntitiesOfClass(ItemFrame.class, searchBox, e -> true)) {
+            if (frame.getItem().is(Items.ELYTRA)) {
                 elytraFrameTargets.add(frame);
                 currentIds.add(frame.getId());
 
@@ -837,10 +837,10 @@ public class Gatekeeper extends Module {
         if (!trackShulkers.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
         Set<Integer> currentIds = new HashSet<>();
 
-        for (ShulkerEntity shulker : mc.world.getEntitiesByClass(ShulkerEntity.class, searchBox, e -> true)) {
+        for (Shulker shulker : mc.level.getEntitiesOfClass(Shulker.class, searchBox, e -> true)) {
             shulkerTargets.add(shulker);
             currentIds.add(shulker.getId());
 
@@ -865,9 +865,9 @@ public class Gatekeeper extends Module {
         if (!trackShulkers.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
 
-        for (ShulkerBulletEntity bullet : mc.world.getEntitiesByClass(ShulkerBulletEntity.class, searchBox, e -> true)) {
+        for (ShulkerBullet bullet : mc.level.getEntitiesOfClass(ShulkerBullet.class, searchBox, e -> true)) {
             bulletTargets.add(bullet);
             if (renderMode.get() == RenderMode.SPECTRAL) {
                 GlowingRegistry.add(bullet.getId(), eaToArgb(shulkerColor.get()));
@@ -880,8 +880,8 @@ public class Gatekeeper extends Module {
         int rSq = r * r;
 
         eaScannedChunks.removeIf(cp -> {
-            int dx = cp.x - centerChunkX;
-            int dz = cp.z - centerChunkZ;
+            int dx = cp.x() - centerChunkX;
+            int dz = cp.z() - centerChunkZ;
             return dx * dx + dz * dz > rSq;
         });
 
@@ -918,19 +918,19 @@ public class Gatekeeper extends Module {
 
         ChunkPos cp = new ChunkPos(cx, cz);
         if (eaScannedChunks.contains(cp)) return false;
-        if (!mc.world.getChunkManager().isChunkLoaded(cx, cz)) return false;
+        if (!mc.level.getChunkSource().hasChunk(cx, cz)) return false;
 
-        WorldChunk chunk = mc.world.getChunk(cx, cz);
+        LevelChunk chunk = mc.level.getChunk(cx, cz);
         eaScanBlockEntitiesInChunk(chunk);
         eaScannedChunks.add(cp);
         return true;
     }
 
-    private void eaScanBlockEntitiesInChunk(WorldChunk chunk) {
+    private void eaScanBlockEntitiesInChunk(LevelChunk chunk) {
         int minY = cityYLevel.get(); 
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            BlockPos pos = be.getPos();
+            BlockPos pos = be.getBlockPos();
             if (pos.getY() < minY) continue;
 
             if (be instanceof ChestBlockEntity) {
@@ -944,13 +944,13 @@ public class Gatekeeper extends Module {
         
         if (interactTimeoutTimer > 0) interactTimeoutTimer--;
 
-        if (mc.currentScreen == null && !wasAutoOpened) {
+        if (mc.screen == null && !wasAutoOpened) {
             List<BlockPos> nearbyChests = targets.entrySet().stream()
                 .filter(e -> e.getValue() == TargetType.CONTAINER)
                 .map(Map.Entry::getKey)
                 .filter(pos -> !checkedContainers.contains(pos))
-                .filter(pos -> Math.sqrt(pos.getSquaredDistance(mc.player.getPos())) <= 4.5)
-                .sorted(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getPos())))
+                .filter(pos -> Math.sqrt(pos.distToCenterSqr(mc.player.position())) <= 4.5)
+                .sorted(Comparator.comparingDouble(pos -> pos.distToCenterSqr(mc.player.position())))
                 .toList();
 
             if (!nearbyChests.isEmpty()) {
@@ -960,31 +960,31 @@ public class Gatekeeper extends Module {
                 interactTimeoutTimer = INTERACT_TIMEOUT_TICKS;
 
                 Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-                    BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
-                    mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-                    mc.player.swingHand(Hand.MAIN_HAND);
+                    BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
                 });
             }
-        } else if (mc.currentScreen == null && wasAutoOpened && interactTimeoutTimer == 0) {
+        } else if (mc.screen == null && wasAutoOpened && interactTimeoutTimer == 0) {
             wasAutoOpened = false;
         }
     }
 
     private void eaCheckOpenedContainerLoot() {
-        if (mc.currentScreen instanceof HandledScreen<?> screen && !(mc.currentScreen instanceof InventoryScreen)) {
-            if (mc.currentScreen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Text.translatable("container.enderchest").getString())) {
+        if (mc.screen instanceof AbstractContainerScreen<?> screen && !(mc.screen instanceof InventoryScreen)) {
+            if (mc.screen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Component.translatable("container.enderchest").getString())) {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
             
             if (!hasAlertedForCurrentScreen) {
-                for (int i = 0; i < screen.getScreenHandler().slots.size(); i++) {
-                    Slot slot = screen.getScreenHandler().slots.get(i);
-                    if (slot.inventory instanceof PlayerInventory) continue;
+                for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+                    Slot slot = screen.getMenu().slots.get(i);
+                    if (slot.container instanceof Inventory) continue;
                     
-                    ItemStack stack = slot.getStack();
+                    ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
-                        info("§cRare loot found in chest: §e" + stack.getName().getString() + "§c!");
+                        info("§cRare loot found in chest: §e" + stack.getHoverName().getString() + "§c!");
                         eaPlayAlert();
                         hasAlertedForCurrentScreen = true;
                         break;
@@ -999,9 +999,9 @@ public class Gatekeeper extends Module {
     private void eaUpdateMilkDrink() {
         if (!autoMilkLevitation.get()) {
             if (drinkTimer > 0) {
-                mc.options.useKey.setPressed(false);
+                mc.options.keyUse.setDown(false);
                 if (previousDrinkSlot != -1 && mc.player != null) {
-                    mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                    mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
                     previousDrinkSlot = -1;
                 }
                 drinkTimer = 0;
@@ -1009,22 +1009,22 @@ public class Gatekeeper extends Module {
             return;
         }
 
-        boolean hasLevitation = mc.player.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.LEVITATION);
+        boolean hasLevitation = mc.player.hasEffect(net.minecraft.world.effect.MobEffects.LEVITATION);
         
-        if (drinkTimer == 0 && hasLevitation && mc.currentScreen == null) {
+        if (drinkTimer == 0 && hasLevitation && mc.screen == null) {
             int milkSlot = eaFindMilkBucket();
             if (milkSlot != -1) {
-                previousDrinkSlot = mc.player.getInventory().selectedSlot;
-                mc.player.getInventory().selectedSlot = milkSlot;
-                mc.options.useKey.setPressed(true);
+                previousDrinkSlot = mc.player.getInventory().getSelectedSlot();
+                mc.player.getInventory().setSelectedSlot(milkSlot);
+                mc.options.keyUse.setDown(true);
                 drinkTimer = 32;
             }
         } else if (drinkTimer > 0) {
             drinkTimer--;
-            if (!hasLevitation || drinkTimer == 0 || mc.player.getInventory().getStack(mc.player.getInventory().selectedSlot).getItem() != Items.MILK_BUCKET) {
-                mc.options.useKey.setPressed(false);
+            if (!hasLevitation || drinkTimer == 0 || mc.player.getInventory().getItem(mc.player.getInventory().getSelectedSlot()).getItem() != Items.MILK_BUCKET) {
+                mc.options.keyUse.setDown(false);
                 if (previousDrinkSlot != -1) {
-                    mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                    mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
                     previousDrinkSlot = -1;
                 }
                 drinkTimer = 0;
@@ -1034,7 +1034,7 @@ public class Gatekeeper extends Module {
 
     private int eaFindMilkBucket() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.MILK_BUCKET)) return i;
+            if (mc.player.getInventory().getItem(i).is(Items.MILK_BUCKET)) return i;
         }
         return -1;
     }
@@ -1047,7 +1047,7 @@ public class Gatekeeper extends Module {
             return;
         }
 
-        boolean hasLevitation = mc.player.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.LEVITATION);
+        boolean hasLevitation = mc.player.hasEffect(net.minecraft.world.effect.MobEffects.LEVITATION);
 
         if (hasLevitation) {
             warning("Levitation effect applied! Watch your altitude.");
@@ -1058,11 +1058,11 @@ public class Gatekeeper extends Module {
 
     private void eaCheckForPlayers() {
         if (!disconnectOnPlayer.get()) return;
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (player == mc.player || player.isSpectator()) continue;
             if (player.distanceTo(mc.player) < 128) {
                 info("§cPlayer detected in render distance! Disconnecting...");
-                mc.getNetworkHandler().getConnection().disconnect(new DisconnectionInfo(Text.literal("Player detected in render distance")));
+                mc.getConnection().getConnection().disconnect(new DisconnectionDetails(Component.literal("Player detected in render distance")));
                 return;
             }
         }
@@ -1071,21 +1071,21 @@ public class Gatekeeper extends Module {
     private void eaPlayAlert() {
         if (mc.player == null) return;
         SoundEvent sound = switch (alertSound.get()) {
-            case LEVEL_UP -> SoundEvents.ENTITY_PLAYER_LEVELUP;
-            case SHULKER_TELEPORT -> SoundEvents.ENTITY_SHULKER_TELEPORT;
-            case EXPERIENCE_ORB -> SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP;
-            case BELL -> SoundEvents.BLOCK_BELL_USE;
-            case ENDER_DRAGON_GROWL -> SoundEvents.ENTITY_ENDER_DRAGON_GROWL;
+            case LEVEL_UP -> SoundEvents.PLAYER_LEVELUP;
+            case SHULKER_TELEPORT -> SoundEvents.SHULKER_TELEPORT;
+            case EXPERIENCE_ORB -> SoundEvents.EXPERIENCE_ORB_PICKUP;
+            case BELL -> SoundEvents.BELL_BLOCK;
+            case ENDER_DRAGON_GROWL -> SoundEvents.ENDER_DRAGON_GROWL;
         };
         mc.player.playSound(sound, alertVolume.get().floatValue(), 1.0f);
     }
 
-    private void eaRenderEntity(Render3DEvent event, boolean isSpectral, boolean isPulse, boolean isEnabled, List<? extends net.minecraft.entity.Entity> entities, SettingColor color) {
+    private void eaRenderEntity(Render3DEvent event, boolean isSpectral, boolean isPulse, boolean isEnabled, List<? extends net.minecraft.world.entity.Entity> entities, SettingColor color) {
         if (!isEnabled || entities.isEmpty()) return;
 
-        for (net.minecraft.entity.Entity entity : entities) {
+        for (net.minecraft.world.entity.Entity entity : entities) {
             if (!entity.isAlive()) continue;
-            Box box = entity.getBoundingBox();
+            AABB box = entity.getBoundingBox();
 
             if (isSpectral) {
                 event.renderer.box(box, withAlpha(color, 0), withAlpha(color, 200), ShapeMode.Lines, 0);
@@ -1111,16 +1111,16 @@ public class Gatekeeper extends Module {
     }
 
     private void eaPruneBlockTargets() {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
         Set<BlockPos> toRemove = new HashSet<>();
         for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
             BlockPos pos = entry.getKey();
             int chunkX = pos.getX() >> 4;
             int chunkZ = pos.getZ() >> 4;
 
-            if (mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
-                if (mc.world.getBlockState(pos).isAir() || !eaValidateBlockType(currentBlock, entry.getValue())) {
+            if (mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
+                if (mc.level.getBlockState(pos).isAir() || !eaValidateBlockType(currentBlock, entry.getValue())) {
                     toRemove.add(pos);
                 }
             } else {
@@ -1152,8 +1152,8 @@ public class Gatekeeper extends Module {
 
     private boolean eaPerformSafetyChecks() {
         if (!autoDisableOnLowHealth.get()) return false;
-        boolean hasTotem = mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)
-            || mc.player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING);
+        boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
+            || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
         if (hasTotem && mc.player.getHealth() <= 6) { 
             error("Health is critical, disabling to prevent totem pop.");
             toggle();
@@ -1195,15 +1195,15 @@ public class Gatekeeper extends Module {
     private enum PortalType { END_PORTAL, END_GATEWAY }
 
     private static class PortalStructure {
-        final Box boundingBox;
+        final AABB boundingBox;
         final Set<BlockPos> portalBlocks;
         final PortalType type;
         final BlockPos destination;
 
-        PortalStructure(Box bb, Set<BlockPos> pb, PortalType t, BlockPos dest) {
+        PortalStructure(AABB bb, Set<BlockPos> pb, PortalType t, BlockPos dest) {
             this.boundingBox = bb; this.portalBlocks = pb; this.type = t; this.destination = dest;
         }
     }
 
-    private record BeamData(Box box, SettingColor color) {}
+    private record BeamData(AABB box, SettingColor color) {}
 }

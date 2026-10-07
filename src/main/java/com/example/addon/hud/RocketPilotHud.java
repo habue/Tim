@@ -19,10 +19,10 @@ import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class RocketPilotHud extends HudElement {
     public static final HudElementInfo<RocketPilotHud> INFO = new HudElementInfo<>(
@@ -32,7 +32,7 @@ public class RocketPilotHud extends HudElement {
         RocketPilotHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgElytra  = settings.createGroup("Elytra Warnings");
@@ -423,11 +423,11 @@ public class RocketPilotHud extends HudElement {
 
             // Find a valid elytra to show as icon
             double threshold = elytraDurabilityThreshold.get();
-            for (ItemStack stack : mc.player.getInventory().main) {
+            for (ItemStack stack : mc.player.getInventory().getNonEquipmentItems()) {
                 if (isValidElytra(stack, threshold)) { elytraStack = stack; break; }
             }
             if (elytraStack.isEmpty()) {
-                ItemStack chest = mc.player.getEquippedStack(EquipmentSlot.CHEST);
+                ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
                 if (isValidElytra(chest, threshold)) elytraStack = chest;
             }
             if (elytraStack.isEmpty()) elytraStack = new ItemStack(Items.ELYTRA);
@@ -445,11 +445,11 @@ public class RocketPilotHud extends HudElement {
         if ((showRocketCount.get() || showFlightTime.get()) && (currentRockets > 0 || isInEditor())) {
             String name = "Firework Rocket";
             for (int i = 0; i < 36; i++) {
-                ItemStack s2 = mc.player.getInventory().getStack(i);
-                if (s2.isOf(Items.FIREWORK_ROCKET)) { name = s2.getName().getString(); rocketStack = s2; break; }
+                ItemStack s2 = mc.player.getInventory().getItem(i);
+                if (s2.is(Items.FIREWORK_ROCKET)) { name = s2.getHoverName().getString(); rocketStack = s2; break; }
             }
-            ItemStack offhand = mc.player.getOffHandStack();
-            if (offhand.isOf(Items.FIREWORK_ROCKET)) { name = offhand.getName().getString(); rocketStack = offhand; }
+            ItemStack offhand = mc.player.getOffhandItem();
+            if (offhand.is(Items.FIREWORK_ROCKET)) { name = offhand.getHoverName().getString(); rocketStack = offhand; }
 
             if (showRocketCount.get()) {
                 rocketLabel = showText ? name + ": " : "";
@@ -467,7 +467,7 @@ public class RocketPilotHud extends HudElement {
         SettingColor distColor = valueColor.get();
 
         if ((showFlightTime.get() || showDistance.get()) && rp.isActive() && (currentRockets > 0 || isInEditor())) {
-            boolean moving = mc.player.getVelocity().lengthSquared() > 0.0001;
+            boolean moving = mc.player.getDeltaMovement().lengthSqr() > 0.0001;
 
             if (!hideTimeWhenStatic.get() || moving) {
                 if (flightStartTime == -1 || currentRockets > flightStartRockets) {
@@ -494,7 +494,7 @@ public class RocketPilotHud extends HudElement {
                     }
 
                     if (showDistance.get()) {
-                        double speed = mc.player.getVelocity().length() * 20.0;
+                        double speed = mc.player.getDeltaMovement().length() * 20.0;
                         double estDist = (msRemaining / 1000.0) * speed;
                         distLabel = showText ? "Est. Distance: " : "";
                         if (distanceUnit.get() == DistanceUnit.Kilometers) {
@@ -814,11 +814,11 @@ public class RocketPilotHud extends HudElement {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
-            ItemStack s = mc.player.getInventory().getStack(i);
-            if (s.isOf(Items.FIREWORK_ROCKET)) count += s.getCount();
+            ItemStack s = mc.player.getInventory().getItem(i);
+            if (s.is(Items.FIREWORK_ROCKET)) count += s.getCount();
         }
-        ItemStack offhand = mc.player.getOffHandStack();
-        if (offhand.isOf(Items.FIREWORK_ROCKET)) count += offhand.getCount();
+        ItemStack offhand = mc.player.getOffhandItem();
+        if (offhand.is(Items.FIREWORK_ROCKET)) count += offhand.getCount();
         return count;
     }
 
@@ -827,19 +827,19 @@ public class RocketPilotHud extends HudElement {
         int count = 0;
         double threshold = elytraDurabilityThreshold.get();
 
-        for (ItemStack stack : mc.player.getInventory().main) {
+        for (ItemStack stack : mc.player.getInventory().getNonEquipmentItems()) {
             if (isValidElytra(stack, threshold)) count++;
         }
-        if (isValidElytra(mc.player.getEquippedStack(EquipmentSlot.CHEST), threshold)) count++;
-        if (isValidElytra(mc.player.getOffHandStack(), threshold)) count++;
+        if (isValidElytra(mc.player.getItemBySlot(EquipmentSlot.CHEST), threshold)) count++;
+        if (isValidElytra(mc.player.getOffhandItem(), threshold)) count++;
 
         return count;
     }
 
     private boolean isValidElytra(ItemStack stack, double threshold) {
-        if (stack == null || stack.isEmpty() || !stack.isOf(Items.ELYTRA)) return false;
-        if (!stack.isDamageable()) return true;
-        double pct = 100.0 * (stack.getMaxDamage() - stack.getDamage()) / stack.getMaxDamage();
+        if (stack == null || stack.isEmpty() || !stack.is(Items.ELYTRA)) return false;
+        if (!stack.isDamageableItem()) return true;
+        double pct = 100.0 * (stack.getMaxDamage() - stack.getDamageValue()) / stack.getMaxDamage();
         return pct > threshold;
     }
 }

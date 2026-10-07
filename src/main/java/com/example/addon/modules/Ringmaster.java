@@ -20,17 +20,17 @@ import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Ringmaster – versatile shape builder with blueprint preview, rotation, and auto‑placement.
@@ -402,7 +402,7 @@ public class Ringmaster extends Module {
     // ========================================
     @Override
     public void onActivate() {
-        centerPos = mc.player.getBlockPos();
+        centerPos = mc.player.blockPosition();
         currentLayer = viewLayer.get();
         placedPositions.clear();
         generateBlueprint();
@@ -423,7 +423,7 @@ public class Ringmaster extends Module {
     }
 
     private void regenerateBlueprint() {
-        if (mc.player == null || mc.world == null || centerPos == null) return;
+        if (mc.player == null || mc.level == null || centerPos == null) return;
         placedPositions.clear();
         generateBlueprint();
         sortBlueprint();
@@ -437,9 +437,9 @@ public class Ringmaster extends Module {
     // ========================================
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        if (pauseOnShift.get() && mc.player.isSneaking()) {
+        if (pauseOnShift.get() && mc.player.isShiftKeyDown()) {
             activeTarget = null;
             tickTimer = 0;
             return;
@@ -511,7 +511,7 @@ public class Ringmaster extends Module {
         BlockPos nearest = findNearestTargetOnLayer(targetCoord, isVertical);
 
         if (nearest != null) {
-            double dist = mc.player.getBlockPos().getSquaredDistance(nearest);
+            double dist = mc.player.blockPosition().distSqr(nearest);
             double maxDist = airPlace.get() ? 25.0 : 6.0;
             if (dist <= maxDist) {
                 activeTarget = nearest;
@@ -559,7 +559,7 @@ public class Ringmaster extends Module {
             if (placedPositions.contains(pos)) continue;
             int coord = isVertical ? pos.getZ() : pos.getY();
             if (coord != targetCoord) continue;
-            double dist = mc.player.getBlockPos().getSquaredDistance(pos);
+            double dist = mc.player.blockPosition().distSqr(pos);
             if (dist < closestDist) {
                 closestDist = dist;
                 nearest = pos;
@@ -572,30 +572,30 @@ public class Ringmaster extends Module {
     // BLOCK PLACEMENT
     // ========================================
     private boolean attemptPlace(BlockPos target) {
-        if (mc.player == null || mc.world == null || mc.interactionManager == null) return false;
+        if (mc.player == null || mc.level == null || mc.gameMode == null) return false;
         if (!selectBlockFromPalette()) return false;
 
         final BlockHitResult finalHit;
         final BlockPos lookTarget;
 
         if (airPlace.get()) {
-            finalHit = new BlockHitResult(Vec3d.ofCenter(target), Direction.UP, target, false);
+            finalHit = new BlockHitResult(Vec3.atCenterOf(target), Direction.UP, target, false);
             lookTarget = target;
         } else {
             Direction placeDir = null;
             BlockPos neighborPos = null;
             for (Direction dir : Direction.values()) {
-                BlockPos neighbor = target.offset(dir);
-                BlockState neighborState = mc.world.getBlockState(neighbor);
-                if (!neighborState.isReplaceable() && neighborState.isFullCube(mc.world, neighbor)) {
+                BlockPos neighbor = target.relative(dir);
+                BlockState neighborState = mc.level.getBlockState(neighbor);
+                if (!neighborState.canBeReplaced() && neighborState.isCollisionShapeFullBlock(mc.level, neighbor)) {
                     placeDir = dir.getOpposite();
                     neighborPos = neighbor;
                     break;
                 }
             }
             if (neighborPos != null) {
-                Vec3d hitVec = Vec3d.ofCenter(neighborPos)
-                        .add(Vec3d.of(placeDir.getVector()).multiply(0.5));
+                Vec3 hitVec = Vec3.atCenterOf(neighborPos)
+                        .add(Vec3.atLowerCornerOf(placeDir.getUnitVec3i()).scale(0.5));
                 finalHit = new BlockHitResult(hitVec, placeDir, neighborPos, false);
                 lookTarget = neighborPos;
             } else {
@@ -604,7 +604,7 @@ public class Ringmaster extends Module {
         }
 
         float targetYaw, targetPitch;
-        if (alignDirectional.get() && isDirectionalBlock(mc.player.getMainHandStack())) {
+        if (alignDirectional.get() && isDirectionalBlock(mc.player.getMainHandItem())) {
             targetYaw = (float) Rotations.getYaw(centerPos);
             targetPitch = (float) Rotations.getPitch(centerPos);
         } else {
@@ -615,32 +615,32 @@ public class Ringmaster extends Module {
         lock = true;
         Rotations.rotate(targetYaw, targetPitch, () -> {
             if (airPlace.get()) {
-                PlayerActionC2SPacket swap = new PlayerActionC2SPacket(
-                        PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND,
-                        BlockPos.ORIGIN, Direction.DOWN);
+                ServerboundPlayerActionPacket swap = new ServerboundPlayerActionPacket(
+                        ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND,
+                        BlockPos.ZERO, Direction.DOWN);
                 own = true;
                 try {
-                    mc.getNetworkHandler().sendPacket(swap);
-                    mc.getNetworkHandler().sendPacket(new PlayerInteractBlockC2SPacket(
-                            Hand.OFF_HAND, finalHit,
-                            mc.player.currentScreenHandler.getRevision() + 2));
-                    mc.getNetworkHandler().sendPacket(swap);
+                    mc.getConnection().send(swap);
+                    mc.getConnection().send(new ServerboundUseItemOnPacket(
+                            InteractionHand.OFF_HAND, finalHit,
+                            mc.player.containerMenu.getStateId() + 2));
+                    mc.getConnection().send(swap);
                 } finally {
                     own = false;
                     lock = false;
                 }
             } else {
-                mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, finalHit);
+                mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, finalHit);
                 lock = false;
             }
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         });
         return true;
     }
 
     @EventHandler
     private void onPacket(PacketEvent.Send event) {
-        if (lock && !own && event.packet instanceof PlayerInteractBlockC2SPacket) {
+        if (lock && !own && event.packet instanceof ServerboundUseItemOnPacket) {
             event.cancel();
         }
     }
@@ -657,7 +657,7 @@ public class Ringmaster extends Module {
     private boolean selectBlockFromPalette() {
         if (mc.player == null) return false;
 
-        ItemStack mainHand = mc.player.getMainHandStack();
+        ItemStack mainHand = mc.player.getMainHandItem();
         if (isValidBlock(mainHand)) {
             tryReplenish();
             return true;
@@ -665,36 +665,36 @@ public class Ringmaster extends Module {
 
         List<Integer> validSlots = new ArrayList<>();
         for (int i = 0; i < 9; i++) {
-            if (isValidBlock(mc.player.getInventory().getStack(i))) {
+            if (isValidBlock(mc.player.getInventory().getItem(i))) {
                 validSlots.add(i);
             }
         }
 
         if (!validSlots.isEmpty()) {
             if (randomizeBlocks.get() && validSlots.size() > 1) {
-                int idx = mc.world.getRandom().nextInt(validSlots.size());
-                mc.player.getInventory().selectedSlot = validSlots.get(idx);
+                int idx = mc.level.getRandom().nextInt(validSlots.size());
+                mc.player.getInventory().setSelectedSlot(validSlots.get(idx));
             } else {
-                mc.player.getInventory().selectedSlot = validSlots.get(0);
+                mc.player.getInventory().setSelectedSlot(validSlots.get(0));
             }
             tryReplenish();
             return true;
         }
 
-        if (!mc.player.getAbilities().creativeMode) {
+        if (!mc.player.getAbilities().instabuild) {
             for (int i = 9; i < 36; i++) {
-                ItemStack stack = mc.player.getInventory().getStack(i);
+                ItemStack stack = mc.player.getInventory().getItem(i);
                 if (isValidBlock(stack)) {
                     int hotbarSlot = -1;
                     for (int j = 0; j < 9; j++) {
-                        if (mc.player.getInventory().getStack(j).isEmpty()) {
+                        if (mc.player.getInventory().getItem(j).isEmpty()) {
                             hotbarSlot = j;
                             break;
                         }
                     }
-                    if (hotbarSlot == -1) hotbarSlot = mc.player.getInventory().selectedSlot;
+                    if (hotbarSlot == -1) hotbarSlot = mc.player.getInventory().getSelectedSlot();
                     InvUtils.move().from(i).toHotbar(hotbarSlot);
-                    mc.player.getInventory().selectedSlot = hotbarSlot;
+                    mc.player.getInventory().setSelectedSlot(hotbarSlot);
                     return false;
                 }
             }
@@ -711,14 +711,14 @@ public class Ringmaster extends Module {
 
     private void tryReplenish() {
         if (mc.player == null) return;
-        ItemStack mainHand = mc.player.getMainHandStack();
+        ItemStack mainHand = mc.player.getMainHandItem();
         if (mainHand.getItem() instanceof BlockItem
                 && mainHand.getCount() <= replenishThreshold.get()
-                && mainHand.getCount() < mainHand.getMaxCount()) {
-            int targetSlot = mc.player.getInventory().selectedSlot;
+                && mainHand.getCount() < mainHand.getMaxStackSize()) {
+            int targetSlot = mc.player.getInventory().getSelectedSlot();
             for (int i = 9; i < 36; i++) {
-                ItemStack invStack = mc.player.getInventory().getStack(i);
-                if (!invStack.isEmpty() && ItemStack.areItemsEqual(mainHand, invStack)) {
+                ItemStack invStack = mc.player.getInventory().getItem(i);
+                if (!invStack.isEmpty() && ItemStack.isSameItem(mainHand, invStack)) {
                     InvUtils.move().from(i).toHotbar(targetSlot);
                     return;
                 }
@@ -733,9 +733,9 @@ public class Ringmaster extends Module {
     private boolean isDirectionalBlock(ItemStack stack) {
         if (!(stack.getItem() instanceof BlockItem)) return false;
         Block block = ((BlockItem) stack.getItem()).getBlock();
-        return block instanceof net.minecraft.block.StairsBlock ||
-                block instanceof net.minecraft.block.SlabBlock ||
-                block instanceof net.minecraft.block.PillarBlock;
+        return block instanceof net.minecraft.world.level.block.StairBlock ||
+                block instanceof net.minecraft.world.level.block.SlabBlock ||
+                block instanceof net.minecraft.world.level.block.RotatedPillarBlock;
     }
 
     // ========================================
@@ -745,7 +745,7 @@ public class Ringmaster extends Module {
     private void onRender3D(Render3DEvent event) {
         if (!blueprintEnabled.get()) return;
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int renderDistSq = renderDistance.get() * renderDistance.get();
         int targetCoord = getCurrentLayerCoord();
         boolean isVertical = orientation.get() == Orientation.Vertical;
@@ -756,7 +756,7 @@ public class Ringmaster extends Module {
                 int coord = isVertical ? pos.getZ() : pos.getY();
                 if (coord != targetCoord) continue;
             }
-            if (pos.getSquaredDistance(playerPos) > renderDistSq) continue;
+            if (pos.distSqr(playerPos) > renderDistSq) continue;
 
             Color color;
             if (placedPositions.contains(pos)) {
@@ -1146,14 +1146,14 @@ public class Ringmaster extends Module {
     // UTILITY
     // ========================================
     private void sortBlueprint() {
-        blueprint.sort(Comparator.comparingDouble(p -> p.getSquaredDistance(centerPos)));
+        blueprint.sort(Comparator.comparingDouble(p -> p.distSqr(centerPos)));
     }
 
     private void verifyBlueprint() {
         placedPositions.clear();
         for (BlockPos pos : blueprint) {
-            BlockState state = mc.world.getBlockState(pos);
-            if (!state.isReplaceable()) {
+            BlockState state = mc.level.getBlockState(pos);
+            if (!state.canBeReplaced()) {
                 placedPositions.add(pos);
             }
         }

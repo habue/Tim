@@ -1,18 +1,18 @@
 package com.example.addon.mixin;
 
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
-@Mixin(HandledScreen.class)
+@Mixin(value = AbstractContainerScreen.class, remap = false)
 public interface HandledScreenAccessor {
-    @Accessor("x")
+    @Accessor("leftPos")
     int getGuiX();
 
-    @Accessor("y")
+    @Accessor("topPos")
     int getGuiY();
 
-    @Accessor("focusedSlot")
+    @Accessor("hoveredSlot")
     Slot getFocusedSlot();
 }

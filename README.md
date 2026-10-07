@@ -1,89 +1,29 @@
-# Tim - Trail Investigator Module
+# Tim — Trail Investigator Module
 
-**Meteor Client addon** providing utilities focused on **stash hunting**, **base hunting**, and general survival/QoL on the 2b2t anarchy server (and similar environments).
-
-Modules List;
-- Baromine
-- Chambers Assistant
-- City Assistant
-- Datamine
-- Dungeon Assistant
-- Eight To One
-- Elytra Assistant
-- Gatekeeper
-- Graveyard
-- Groundwork
-- Handhold
-- Handmold
-- Illushine
-- Inspector Gadget
-- Inventory101
-- Lava Marker
-- Loot Lens
-- Manor Assistant
-- Mendbot
-- Mobanom
-- Neighbourhood Watch
-- Penpal
-- Portal Maker
-- Raidar
-- Ringmaster
-- Rocket Pilot
-- Safety Net
-- Server Healthcare System
-- Sign Scanner
-- Third Sight
-- Threaturn
-- Time Throttle
-- Total Disposal
-- Tunnelers
-- Waypearl
-
-HUD List
-- Baromine
-- Motance
-- Portal Stock
-- Chambers Assistant
-- City Assistant
-- Dungeon Assistant
-- Dura Panel
-- Eight To One
-- End Assistant
-- Gatekeeper
-- Info Assistant
-- Last Seen Player
-- Loot Lens
-- Neighbourhood Watch
-- Position
-- Rocket Pilot
-- Second Life
-- Server Report
-- Statistics Information
-- Time Throttle
-
-More modules/huds coming soon — 
-
-## Requirements
-
-- Minecraft **1.21.x** (or whichever version your addon targets — check `gradle/libs.versions.toml`)
-- [Fabric Loader](https://fabricmc.net/use/installer/)
-- [Meteor Client](https://meteorclient.com/) (latest snapshot recommended for 2b2t compatibility)
-- This addon JAR
+Meteor Client addon for **Minecraft 26.1.2**, ported from rithsgit's 1.21.4 addon.
+The port is maintained on the `meteor-26.1.2` branch. Original modules and HUD elements are preserved.
 
 ## Installation
 
-1. Download the latest release JAR from [Releases](https://github.com/rithsgit/HuntingUtilitiesBETA/releases) (or build from source — see below).
-2. Place the JAR in your Minecraft `mods` folder **alongside** Meteor Client.
-3. Launch Minecraft using the Fabric profile.
-4. In-game: Open Meteor GUI (`Right Shift` by default) → your HuntingUtilities modules should appear in the module list.
+1. Use Minecraft **26.1.2**, Java **25**, Fabric Loader **0.19.2 or newer**, and Meteor Client for **26.1.2**.
+2. Download `Tim-26.1.2` from a successful [GitHub Actions build](https://github.com/habue/Tim/actions/workflows/build.yml).
+3. Extract the ZIP and put `Tim-1.0-26.1.2.jar` in your `mods` directory.
+4. Enable modules in the **Tim** category and add HUD elements from the **Tim** group.
 
-## Building from Source
+Features that use Baritone require the compatible Baritone for Minecraft 26.1. Install it alongside Meteor if it is not already included in your setup.
 
-This project uses the Meteor Addon Template structure.
+## Building
 
-### Setup
+With JDK 25 installed:
 
-- Clone the repo:  
-  ```bash
-  git clone https://github.com/rithsgit/HuntingUtilitiesBETA.git
-  cd HuntingUtilitiesBETA
+```sh
+./gradlew build
+```
+
+The installable JAR is written to `build/libs/`. GitHub Actions builds every push to
+`meteor-26.1.2`, pull requests, and manual runs, then uploads the JAR as an artifact.
+Meteor, Minecraft and Baritone are compile dependencies; they are not bundled in the addon.
+
+## License
+
+CC0-1.0, as declared by the upstream repository's `LICENSE`.

@@ -16,10 +16,10 @@ import meteordevelopment.meteorclient.systems.hud.HudElement;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.resources.Identifier;
 
 public class MotanceHud extends HudElement {
     public static final HudElementInfo<MotanceHud> INFO = new HudElementInfo<>(
@@ -29,11 +29,11 @@ public class MotanceHud extends HudElement {
         MotanceHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
     
-    private static final Identifier SPEED_TEXTURE = Identifier.of("minecraft", "textures/mob_effect/speed.png");
-    private static final Identifier SLOWNESS_TEXTURE = Identifier.of("minecraft", "textures/mob_effect/slowness.png");
-    private static final Identifier JUMP_TEXTURE = Identifier.of("minecraft", "textures/mob_effect/jump_boost.png");
+    private static final Identifier SPEED_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/mob_effect/speed.png");
+    private static final Identifier SLOWNESS_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/mob_effect/slowness.png");
+    private static final Identifier JUMP_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/mob_effect/jump_boost.png");
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
@@ -136,9 +136,9 @@ public class MotanceHud extends HudElement {
         }
 
         boolean isSprinting = mc.player.isSprinting();
-        boolean isSneaking = mc.player.isSneaking();
+        boolean isSneaking = mc.player.isShiftKeyDown();
         // Detect jumping by checking if the player is airborne and moving upwards
-        boolean isJumping = !mc.player.isOnGround() && mc.player.getVelocity().y > 0.0;
+        boolean isJumping = !mc.player.onGround() && mc.player.getDeltaMovement().y > 0.0;
 
         // If not moving and not in editor, don't take up HUD space
         if (!isSprinting && !isSneaking && !isJumping && !isInEditor()) {
@@ -190,7 +190,7 @@ public class MotanceHud extends HudElement {
         }
 
         // Initialize context once per render pass
-        DrawContext context = new DrawContext(mc, mc.getBufferBuilders().getEntityVertexConsumers());
+        
 
         double startX, startY;
         if (layout.get() == Layout.Inline) {
@@ -202,7 +202,7 @@ public class MotanceHud extends HudElement {
 
             double curX = startX;
             for (Identifier icon : activeIcons) {
-                drawEffectIcon(context, icon, curX, startY, iconScale.get() * s, getColor(icon));
+                drawEffectIcon(renderer, icon, curX, startY, iconScale.get() * s, getColor(icon));
                 curX += iconSize + gapSize;
             }
         } else { // Stacked
@@ -214,12 +214,12 @@ public class MotanceHud extends HudElement {
 
             double curY = startY;
             for (Identifier icon : activeIcons) {
-                drawEffectIcon(context, icon, startX, curY, iconScale.get() * s, getColor(icon));
+                drawEffectIcon(renderer, icon, startX, curY, iconScale.get() * s, getColor(icon));
                 curY += iconSize + gapSize;
             }
         }
 
-        context.draw(); // Flush the buffer immediately after drawing all icons
+
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -234,20 +234,7 @@ public class MotanceHud extends HudElement {
     /**
      * Draws standard Minecraft status effect textures using 1.21.4's DrawContext.
      */
-    private void drawEffectIcon(DrawContext context, Identifier texture, double x, double y, double scale, SettingColor color) {
-        context.getMatrices().push();
-        context.getMatrices().translate(x, y, 0);
-        context.getMatrices().scale((float) scale, (float) scale, 1.0f);
-        
-        RenderSystem.enableBlend();
-        RenderSystem.setShaderColor(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
-        
-        // 1.21.4 requires a Function<Identifier, RenderLayer> as the first argument for drawTexture
-        context.drawTexture(RenderLayer::getGuiTextured, texture, 0, 0, 0.0f, 0.0f, 18, 18, 18, 18);
-        
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-        RenderSystem.disableBlend();
-        
-        context.getMatrices().pop();
+    private void drawEffectIcon(HudRenderer renderer, Identifier texture, double x, double y, double scale, SettingColor color) {
+        renderer.texture(texture, x, y, 18 * scale, 18 * scale, color);
     }
 }

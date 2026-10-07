@@ -3,12 +3,11 @@ package com.example.addon.mixin;
 import com.example.addon.modules.EightToOne;
 import com.example.addon.modules.Gatekeeper;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,14 +17,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * This mixin helps portal modules detect block changes more efficiently
  * by marking chunks as dirty when portal-related blocks are modified.
  */
-@Mixin(World.class)
+@Mixin(value = Level.class, remap = false)
 public abstract class PortalTrackerMixin {
 
     /**
      * Monitor portal block state changes and mark chunks for re-scanning.
      */
     @Inject(
-        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z",
+        method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
         at = @At("RETURN")
     )
     private void onSetBlockState(
@@ -41,20 +40,20 @@ public abstract class PortalTrackerMixin {
         // We trigger if the NEW block is a portal (placement) 
         // Note: To detect removal, you'd ideally check the state before replacement,
         // but checking the new state is the most common use case for "marking dirty".
-        boolean isPortalRelated = newState.isOf(Blocks.NETHER_PORTAL) ||
-                                  newState.isOf(Blocks.END_PORTAL) ||
-                                  newState.isOf(Blocks.END_GATEWAY) ||
-                                  newState.isOf(Blocks.END_PORTAL_FRAME);
+        boolean isPortalRelated = newState.is(Blocks.NETHER_PORTAL) ||
+                                  newState.is(Blocks.END_PORTAL) ||
+                                  newState.is(Blocks.END_GATEWAY) ||
+                                  newState.is(Blocks.END_PORTAL_FRAME);
 
         if (isPortalRelated) {
             EightToOne eto = Modules.get().get(EightToOne.class);
             if (eto != null && eto.isActive()) {
-                eto.markChunkDirty(new ChunkPos(pos));
+                eto.markChunkDirty(ChunkPos.containing(pos));
             }
 
             Gatekeeper gk = Modules.get().get(Gatekeeper.class);
             if (gk != null && gk.isActive()) {
-                gk.markChunkDirty(new ChunkPos(pos));
+                gk.markChunkDirty(ChunkPos.containing(pos));
             }
         }
     }

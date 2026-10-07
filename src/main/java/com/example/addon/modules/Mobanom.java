@@ -22,24 +22,24 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.ShulkerBoxBlock;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.ItemEnchantmentsComponent;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.Enchantments;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.passive.AbstractDonkeyEntity;
-import net.minecraft.entity.passive.LlamaEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Box;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.animal.equine.AbstractChestedHorse;
+import net.minecraft.world.entity.animal.equine.Llama;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.phys.AABB;
 
 public class Mobanom extends Module {
 
@@ -360,17 +360,17 @@ public class Mobanom extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         highlightedEntities.clear();
         GlowingRegistry.clear();
-        notifiedEntities.removeIf(id -> mc.world.getEntityById(id) == null);
+        notifiedEntities.removeIf(id -> mc.level.getEntity(id) == null);
 
-        String dim = mc.world.getRegistryKey().getValue().toString();
+        String dim = mc.level.dimension().identifier().toString();
         boolean spectral = highlightMode.get() == HighlightMode.Spectral;
 
-        for (Entity entity : mc.world.getEntities()) {
-            if (!(entity instanceof MobEntity mob)) continue;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof Mob mob)) continue;
             if (ignoredEntities.get().contains(mob.getType())) continue;
             if (mc.player.distanceTo(mob) > range.get()) continue;
 
@@ -385,7 +385,7 @@ public class Mobanom extends Module {
             }
 
             if (chatNotification.get() && notifiedEntities.add(mob.getId())) {
-                String mobName = mob.getType().getName().getString();
+                String mobName = mob.getType().getDescription().getString();
                 switch (type) {
                     case CHESTED -> info("Chested animal detected: "    + mobName);
                     case ITEM    -> info("Item anomaly detected: "      + mobName);
@@ -401,14 +401,14 @@ public class Mobanom extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.world == null || mc.player == null || highlightedEntities.isEmpty()) return;
+        if (mc.level == null || mc.player == null || highlightedEntities.isEmpty()) return;
 
         boolean wireframe = highlightMode.get() == HighlightMode.Wireframe;
         boolean pulse = highlightMode.get() == HighlightMode.Pulse;
 
         for (Map.Entry<Integer, AnomalyType> entry : highlightedEntities.entrySet()) {
-            Entity entity = mc.world.getEntityById(entry.getKey());
-            if (!(entity instanceof MobEntity mob)) continue;
+            Entity entity = mc.level.getEntity(entry.getKey());
+            if (!(entity instanceof Mob mob)) continue;
 
             SettingColor color = getColorForType(entry.getValue());
 
@@ -426,7 +426,7 @@ public class Mobanom extends Module {
     // Bloom & Pulse Rendering
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int    layers    = glowLayers.get();
         double spread    = glowSpread.get();
         int    baseAlpha = glowBaseAlpha.get();
@@ -434,7 +434,7 @@ public class Mobanom extends Module {
         for (int i = layers; i >= 1; i--) {
             double expansion = spread * i;
             int layerAlpha   = Math.max(4, (int)(baseAlpha * (1.0 - (double)(i - 1) / layers)));
-            event.renderer.box(box.expand(expansion), withAlpha(color, layerAlpha), withAlpha(color, 0), ShapeMode.Sides, 0);
+            event.renderer.box(box.inflate(expansion), withAlpha(color, layerAlpha), withAlpha(color, 0), ShapeMode.Sides, 0);
         }
     }
 
@@ -456,7 +456,7 @@ public class Mobanom extends Module {
         return withAlpha(base, applyPulse(base.a));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -465,7 +465,7 @@ public class Mobanom extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -475,7 +475,7 @@ public class Mobanom extends Module {
     // Detection Logic
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private AnomalyType resolveAnomalyType(MobEntity mob, String dimension) {
+    private AnomalyType resolveAnomalyType(Mob mob, String dimension) {
         if (detectChestedAnimals.get() && hasChestAttachment(mob)) return AnomalyType.CHESTED;
         if (detectUnnaturalItems.get() && hasUnnaturalItems(mob))  return AnomalyType.ITEM;
 
@@ -504,18 +504,18 @@ public class Mobanom extends Module {
         };
     }
 
-    private boolean hasUnnaturalItems(MobEntity mob) {
-        for (ItemStack stack : mob.getArmorItems()) {
+    private boolean hasUnnaturalItems(Mob mob) {
+        for (ItemStack stack : java.util.List.of(mob.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD), mob.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST), mob.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.LEGS), mob.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.FEET))) {
             if (isUnnatural(stack)) return true;
         }
         // Piglins (including babies) naturally spawn holding crossbows or nothing.
         // Zombified Piglins always hold a golden sword — skip both.
         boolean skipMainHand = (mob.getType() == EntityType.PIGLIN
-                                    && mob.getMainHandStack().isOf(Items.CROSSBOW))
+                                    && mob.getMainHandItem().is(Items.CROSSBOW))
                             || (mob.getType() == EntityType.ZOMBIFIED_PIGLIN
-                                    && mob.getMainHandStack().isOf(Items.GOLDEN_SWORD));
-        if (!skipMainHand && isUnnatural(mob.getMainHandStack())) return true;
-        if (isUnnatural(mob.getOffHandStack())) return true;
+                                    && mob.getMainHandItem().is(Items.GOLDEN_SWORD));
+        if (!skipMainHand && isUnnatural(mob.getMainHandItem())) return true;
+        if (isUnnatural(mob.getOffhandItem())) return true;
         return false;
     }
 
@@ -528,25 +528,25 @@ public class Mobanom extends Module {
         if (item instanceof BlockItem bi && bi.getBlock() instanceof ShulkerBoxBlock) return true;
         if (detectPumpkins.get() && (item == Items.CARVED_PUMPKIN || item == Items.JACK_O_LANTERN)) return true;
 
-        Identifier itemId = Registries.ITEM.getId(item);
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
         if (itemId.getNamespace().equals("minecraft") && itemId.getPath().startsWith("netherite_")) return true;
 
-        ItemEnchantmentsComponent enchants = stack.get(DataComponentTypes.ENCHANTMENTS);
+        ItemEnchantments enchants = stack.get(DataComponents.ENCHANTMENTS);
         if (enchants == null || enchants.isEmpty()) return false;
 
-        for (RegistryEntry<Enchantment> enchantmentEntry : enchants.getEnchantments()) {
+        for (Holder<Enchantment> enchantmentEntry : enchants.keySet()) {
             Enchantment enchantment = enchantmentEntry.value();
             if (enchantment == null) continue;
-            if (enchantmentEntry.matchesKey(Enchantments.MENDING)) return true;
+            if (enchantmentEntry.is(Enchantments.MENDING)) return true;
             if (enchants.getLevel(enchantmentEntry) > enchantment.getMaxLevel()) return true;
         }
 
         return false;
     }
 
-    private boolean hasChestAttachment(MobEntity mob) {
-        if (mob instanceof AbstractDonkeyEntity donkey) return donkey.hasChest();
-        if (mob instanceof LlamaEntity llama)           return llama.hasChest();
+    private boolean hasChestAttachment(Mob mob) {
+        if (mob instanceof AbstractChestedHorse donkey) return donkey.hasChest();
+        if (mob instanceof Llama llama)           return llama.hasChest();
         return false;
     }
 

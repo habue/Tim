@@ -5,7 +5,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 
 import meteordevelopment.meteorclient.commands.Command;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.command.CommandSource;
+import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 
 public class LootLensCommand extends Command {
     
@@ -14,7 +14,7 @@ public class LootLensCommand extends Command {
     }
 
     @Override
-    public void build(LiteralArgumentBuilder<CommandSource> builder) {
+    public void build(LiteralArgumentBuilder<ClientSuggestionProvider> builder) {
         builder.executes(context -> {
             LootLens module = Modules.get().get(LootLens.class);
             if (module != null) {

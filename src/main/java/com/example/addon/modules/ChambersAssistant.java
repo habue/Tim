@@ -29,45 +29,45 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.entity.BarrelBlockEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.block.entity.DecoratedPotBlockEntity;
-import net.minecraft.block.entity.DispenserBlockEntity;
-import net.minecraft.block.entity.TrialSpawnerBlockEntity;
-import net.minecraft.block.entity.VaultBlockEntity;
-import net.minecraft.block.enums.TrialSpawnerState;
-import net.minecraft.block.enums.VaultState;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.decoration.ItemFrameEntity;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.mob.BreezeEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.entity.projectile.WindChargeEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.DisconnectionInfo;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.DisconnectionDetails;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.breeze.Breeze;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.hurtingprojectile.windcharge.WindCharge;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.DecoratedPotBlockEntity;
+import net.minecraft.world.level.block.entity.DispenserBlockEntity;
+import net.minecraft.world.level.block.entity.TrialSpawnerBlockEntity;
+import net.minecraft.world.level.block.entity.trialspawner.TrialSpawnerState;
+import net.minecraft.world.level.block.entity.vault.VaultBlockEntity;
+import net.minecraft.world.level.block.entity.vault.VaultState;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class ChambersAssistant extends Module {
 
@@ -112,9 +112,9 @@ public class ChambersAssistant extends Module {
     private final Set<BlockPos> notifiedPots = new HashSet<>();
     private final Set<BlockPos> notifiedActiveOminousSpawners = new HashSet<>();
     
-    private final List<BreezeEntity> breezeTargets = new ArrayList<>();
-    private final List<WindChargeEntity> windChargeTargets = new ArrayList<>();
-    private final List<ItemFrameEntity> itemFrameTargets = new ArrayList<>();
+    private final List<Breeze> breezeTargets = new ArrayList<>();
+    private final List<WindCharge> windChargeTargets = new ArrayList<>();
+    private final List<ItemFrame> itemFrameTargets = new ArrayList<>();
     private final List<ItemEntity> trialItemTargets = new ArrayList<>();
     
     private final Set<Integer> notifiedBreezes = new HashSet<>();
@@ -485,7 +485,7 @@ public class ChambersAssistant extends Module {
     @Override
     public void onDeactivate() {
         if (previousDrinkSlot != -1 && mc.player != null) {
-            mc.player.getInventory().selectedSlot = previousDrinkSlot;
+            mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
         }
         GlowingRegistry.clear();
         targets.clear();
@@ -497,7 +497,7 @@ public class ChambersAssistant extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         if (performSafetyChecks()) return;
         checkForPlayers();
         checkOmenEffects();
@@ -511,7 +511,7 @@ public class ChambersAssistant extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         boolean isPulse = renderMode.get() == RenderMode.PULSE;
@@ -521,13 +521,13 @@ public class ChambersAssistant extends Module {
             BlockPos pos = entry.getKey();
             TargetType type = entry.getValue();
 
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-            if (mc.world.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+            if (mc.level.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
 
-            Block currentBlock = mc.world.getBlockState(pos).getBlock();
+            Block currentBlock = mc.level.getBlockState(pos).getBlock();
             if (!validateBlockType(currentBlock, type)) { toRemove.add(pos); continue; }
 
-            Box renderBox = new Box(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
+            AABB renderBox = new AABB(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
             SettingColor color = getColor(type);
             if (color == null) continue;
 
@@ -554,17 +554,17 @@ public class ChambersAssistant extends Module {
     }
 
     private void updateDynamicStates() {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         for (BlockPos pos : new HashSet<>(targets.keySet())) {
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
 
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             Block block = state.getBlock();
 
             if (block == Blocks.TRIAL_SPAWNER) {
-                boolean isOminous = state.get(Properties.OMINOUS);
-                TrialSpawnerState spawnerState = state.get(Properties.TRIAL_SPAWNER_STATE);
+                boolean isOminous = state.getValue(BlockStateProperties.OMINOUS);
+                TrialSpawnerState spawnerState = state.getValue(BlockStateProperties.TRIAL_SPAWNER_STATE);
                 TargetType currentType = targets.get(pos);
                 TargetType newType;
 
@@ -590,8 +590,8 @@ public class ChambersAssistant extends Module {
                     }
                 }
             } else if (block == Blocks.VAULT) {
-                boolean isOminous = state.get(Properties.OMINOUS);
-                VaultState vState = state.get(Properties.VAULT_STATE);
+                boolean isOminous = state.getValue(BlockStateProperties.OMINOUS);
+                VaultState vState = state.getValue(BlockStateProperties.VAULT_STATE);
                 TargetType currentType = targets.get(pos);
                 TargetType newType;
 
@@ -613,7 +613,7 @@ public class ChambersAssistant extends Module {
     }
 
     private void updateVaultAutomation() {
-        if (!autoOpenVaults.get() || mc.player == null || mc.world == null) return;
+        if (!autoOpenVaults.get() || mc.player == null || mc.level == null) return;
 
         if (vaultChatNotify.get()) {
             scanVaultDisplays();
@@ -655,15 +655,15 @@ public class ChambersAssistant extends Module {
     }
 
     private boolean isVaultTargetValid(BlockPos pos) {
-        BlockState state = mc.world.getBlockState(pos);
+        BlockState state = mc.level.getBlockState(pos);
         if (state.getBlock() != Blocks.VAULT) return false;
-        if (state.get(Properties.VAULT_STATE) != VaultState.ACTIVE) return false;
-        if (Vec3d.ofCenter(pos).distanceTo(mc.player.getEyePos()) > vaultOpenRange.get()) return false;
-        return mc.world.getBlockEntity(pos) instanceof VaultBlockEntity;
+        if (state.getValue(BlockStateProperties.VAULT_STATE) != VaultState.ACTIVE) return false;
+        if (Vec3.atCenterOf(pos).distanceTo(mc.player.getEyePosition()) > vaultOpenRange.get()) return false;
+        return mc.level.getBlockEntity(pos) instanceof VaultBlockEntity;
     }
 
     private ItemStack getVaultDisplayItem(BlockPos pos) {
-        BlockEntity be = mc.world.getBlockEntity(pos);
+        BlockEntity be = mc.level.getBlockEntity(pos);
         if (!(be instanceof VaultBlockEntity vault)) return null;
         ItemStack display = vault.getSharedData().getDisplayItem();
         return display.isEmpty() ? null : display;
@@ -687,7 +687,7 @@ public class ChambersAssistant extends Module {
             lastKnownVaultItems.put(key, current);
             boolean isTrigger = vaultTriggerItems.get().contains(current);
             
-            StringBuilder msg = new StringBuilder("§7[Vault Display] " + display.getName().getString());
+            StringBuilder msg = new StringBuilder("§7[Vault Display] " + display.getHoverName().getString());
             if (isTrigger) {
                 msg.append(" §a[MATCH - Triggering Opening]");
                 info(msg.toString());
@@ -708,9 +708,9 @@ public class ChambersAssistant extends Module {
 
         InvUtils.swap(key.slot(), false);
         Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-            BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos), Direction.NORTH, pos, false);
-            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-            mc.player.swingHand(Hand.MAIN_HAND);
+            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.NORTH, pos, false);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         });
         
         successfullyOpenedVaults.add(pos);
@@ -718,10 +718,10 @@ public class ChambersAssistant extends Module {
     }
 
     private void updateScanningLogic() {
-        if (mc.world.getRegistryKey() == null) return;
+        if (mc.level.dimension() == null) return;
         if (dimensionChangeCooldown > 0) { dimensionChangeCooldown--; return; }
 
-        String currDim = mc.world.getRegistryKey().getValue().toString();
+        String currDim = mc.level.dimension().identifier().toString();
         if (!currDim.equals(lastDimension)) {
             dimensionChangeCooldown = DIMENSION_CHANGE_COOLDOWN_TICKS;
             lastDimension = currDim;
@@ -731,7 +731,7 @@ public class ChambersAssistant extends Module {
             return;
         }
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int centerChunkX = playerPos.getX() >> 4;
         int centerChunkZ = playerPos.getZ() >> 4;
 
@@ -748,17 +748,17 @@ public class ChambersAssistant extends Module {
     private void scanDroppedRewards() {
         if (!enableAlerts.get()) return;
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
         Set<Integer> currentIds = new HashSet<>();
 
-        for (ItemEntity item : mc.world.getEntitiesByClass(ItemEntity.class, searchBox, e -> true)) {
+        for (ItemEntity item : mc.level.getEntitiesOfClass(ItemEntity.class, searchBox, e -> true)) {
             currentIds.add(item.getId());
             if (notifiedDroppedRewards.add(item.getId())) {
                 for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
                     TargetType type = entry.getValue();
                     if (type == TargetType.EJECTING_TRIAL_SPAWNER || type == TargetType.EJECTING_OMINOUS_SPAWNER || type == TargetType.EJECTING_VAULT) {
-                        if (entry.getKey().isWithinDistance(item.getPos(), 2.0)) {
-                            info("§bReward Ejected: §e" + item.getStack().getName().getString() + "§b!");
+                        if (entry.getKey().closerToCenterThan(item.position(), 2.0)) {
+                            info("§bReward Ejected: §e" + item.getItem().getHoverName().getString() + "§b!");
                             playAlert();
                             break;
                         }
@@ -774,10 +774,10 @@ public class ChambersAssistant extends Module {
         if (!trackBreezes.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
         Set<Integer> currentIds = new HashSet<>();
 
-        for (BreezeEntity breeze : mc.world.getEntitiesByClass(BreezeEntity.class, searchBox, e -> true)) {
+        for (Breeze breeze : mc.level.getEntitiesOfClass(Breeze.class, searchBox, e -> true)) {
             breezeTargets.add(breeze);
             currentIds.add(breeze.getId());
 
@@ -800,9 +800,9 @@ public class ChambersAssistant extends Module {
         if (!trackBreezes.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
 
-        for (WindChargeEntity charge : mc.world.getEntitiesByClass(WindChargeEntity.class, searchBox, e -> true)) {
+        for (WindCharge charge : mc.level.getEntitiesOfClass(WindCharge.class, searchBox, e -> true)) {
             windChargeTargets.add(charge);
             if (renderMode.get() == RenderMode.SPECTRAL) {
                 GlowingRegistry.add(charge.getId(), toArgb(breezeColor.get()));
@@ -815,10 +815,10 @@ public class ChambersAssistant extends Module {
         if (!trackOminousItemFrames.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
 
-        for (ItemFrameEntity frame : mc.world.getEntitiesByClass(ItemFrameEntity.class, searchBox, e -> true)) {
-            if (frame.isInvisible() && !frame.getHeldItemStack().isEmpty()) {
+        for (ItemFrame frame : mc.level.getEntitiesOfClass(ItemFrame.class, searchBox, e -> true)) {
+            if (frame.isInvisible() && !frame.getItem().isEmpty()) {
                 itemFrameTargets.add(frame);
                 if (renderMode.get() == RenderMode.SPECTRAL) {
                     GlowingRegistry.add(frame.getId(), toArgb(itemFrameColor.get()));
@@ -832,10 +832,10 @@ public class ChambersAssistant extends Module {
         if (!trackTrialItems.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
 
-        for (ItemEntity item : mc.world.getEntitiesByClass(ItemEntity.class, searchBox, e -> true)) {
-            Item stackItem = item.getStack().getItem();
+        for (ItemEntity item : mc.level.getEntitiesOfClass(ItemEntity.class, searchBox, e -> true)) {
+            Item stackItem = item.getItem().getItem();
             if (stackItem == Items.TRIAL_KEY || stackItem == Items.OMINOUS_TRIAL_KEY || stackItem == Items.OMINOUS_BOTTLE) {
                 trialItemTargets.add(item);
                 if (renderMode.get() == RenderMode.SPECTRAL) {
@@ -850,8 +850,8 @@ public class ChambersAssistant extends Module {
         int rSq = r * r;
 
         scannedChunks.removeIf(cp -> {
-            int dx = cp.x - centerChunkX;
-            int dz = cp.z - centerChunkZ;
+            int dx = cp.x() - centerChunkX;
+            int dz = cp.z() - centerChunkZ;
             return dx * dx + dz * dz > rSq;
         });
 
@@ -888,26 +888,26 @@ public class ChambersAssistant extends Module {
 
         ChunkPos cp = new ChunkPos(cx, cz);
         if (scannedChunks.contains(cp)) return false;
-        if (!mc.world.getChunkManager().isChunkLoaded(cx, cz)) return false;
+        if (!mc.level.getChunkSource().hasChunk(cx, cz)) return false;
 
-        WorldChunk chunk = mc.world.getChunk(cx, cz);
+        LevelChunk chunk = mc.level.getChunk(cx, cz);
         scanBlockEntitiesInChunk(chunk);
         scannedChunks.add(cp);
         return true;
     }
 
-    private void scanBlockEntitiesInChunk(WorldChunk chunk) {
+    private void scanBlockEntitiesInChunk(LevelChunk chunk) {
         int maxY = chamberYLevel.get(); 
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            BlockPos pos = be.getPos();
+            BlockPos pos = be.getBlockPos();
             if (pos.getY() > maxY) continue;
 
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             
             if (be instanceof TrialSpawnerBlockEntity) {
-                boolean isOminous = state.get(Properties.OMINOUS); 
-                TrialSpawnerState spawnerState = state.get(Properties.TRIAL_SPAWNER_STATE);
+                boolean isOminous = state.getValue(BlockStateProperties.OMINOUS); 
+                TrialSpawnerState spawnerState = state.getValue(BlockStateProperties.TRIAL_SPAWNER_STATE);
 
                 if (spawnerState == TrialSpawnerState.EJECTING_REWARD) {
                     targets.put(pos, isOminous ? TargetType.EJECTING_OMINOUS_SPAWNER : TargetType.EJECTING_TRIAL_SPAWNER);
@@ -918,8 +918,8 @@ public class ChambersAssistant extends Module {
                 }
             } 
             else if (be instanceof VaultBlockEntity) {
-                boolean isOminous = state.get(Properties.OMINOUS);
-                VaultState vState = state.get(Properties.VAULT_STATE);
+                boolean isOminous = state.getValue(BlockStateProperties.OMINOUS);
+                VaultState vState = state.getValue(BlockStateProperties.VAULT_STATE);
                 
                 if (vState == VaultState.EJECTING) {
                     targets.put(pos, TargetType.EJECTING_VAULT);
@@ -932,13 +932,13 @@ public class ChambersAssistant extends Module {
             }
             else if (be instanceof DecoratedPotBlockEntity pot) {
                 if (!potWhitelist.get().isEmpty()) {
-                    ItemStack potItem = pot.getStack(); 
+                    ItemStack potItem = pot.getTheItem(); 
                     if (!potItem.isEmpty() && potWhitelist.get().contains(potItem.getItem())) {
                         targets.put(pos, TargetType.LOOT_POT);
                         
                         if (notifiedPots.add(pos)) {
                             if (alertOnLootPot.get()) {
-                                info("§bLoot Pot detected containing: §e" + potItem.getName().getString() + "§b!");
+                                info("§bLoot Pot detected containing: §e" + potItem.getHoverName().getString() + "§b!");
                                 playAlert();
                             }
                         }
@@ -951,14 +951,14 @@ public class ChambersAssistant extends Module {
     private void updateContainerLogic() {
         if (interactTimeoutTimer > 0) interactTimeoutTimer--;
 
-        if (mc.currentScreen == null && !wasAutoOpened && autoOpenVaults.get()) {
+        if (mc.screen == null && !wasAutoOpened && autoOpenVaults.get()) {
             List<BlockPos> nearbyVaults = targets.entrySet().stream()
                 .filter(e -> e.getValue() == TargetType.VAULT || e.getValue() == TargetType.OMINOUS_VAULT)
                 .map(Map.Entry::getKey)
                 .filter(pos -> !checkedContainers.contains(pos))
                 .filter(pos -> !successfullyOpenedVaults.contains(pos))
-                .filter(pos -> Math.sqrt(pos.getSquaredDistance(mc.player.getPos())) <= 4.5)
-                .sorted(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getPos())))
+                .filter(pos -> Math.sqrt(pos.distToCenterSqr(mc.player.position())) <= 4.5)
+                .sorted(Comparator.comparingDouble(pos -> pos.distToCenterSqr(mc.player.position())))
                 .toList();
 
             if (!nearbyVaults.isEmpty()) {
@@ -968,31 +968,31 @@ public class ChambersAssistant extends Module {
                 interactTimeoutTimer = INTERACT_TIMEOUT_TICKS;
 
                 Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-                    BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
-                    mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-                    mc.player.swingHand(Hand.MAIN_HAND);
+                    BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
                 });
             }
-        } else if (mc.currentScreen == null && wasAutoOpened && interactTimeoutTimer == 0) {
+        } else if (mc.screen == null && wasAutoOpened && interactTimeoutTimer == 0) {
             wasAutoOpened = false;
         }
     }
 
     private void checkOpenedContainerLoot() {
-        if (mc.currentScreen instanceof HandledScreen<?> screen && !(mc.currentScreen instanceof InventoryScreen)) {
-            if (mc.currentScreen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Text.translatable("container.enderchest").getString())) {
+        if (mc.screen instanceof AbstractContainerScreen<?> screen && !(mc.screen instanceof InventoryScreen)) {
+            if (mc.screen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Component.translatable("container.enderchest").getString())) {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
             
             if (!hasAlertedForCurrentScreen) {
-                for (int i = 0; i < screen.getScreenHandler().slots.size(); i++) {
-                    Slot slot = screen.getScreenHandler().slots.get(i);
-                    if (slot.inventory instanceof PlayerInventory) continue;
+                for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+                    Slot slot = screen.getMenu().slots.get(i);
+                    if (slot.container instanceof Inventory) continue;
                     
-                    ItemStack stack = slot.getStack();
+                    ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
-                        info("§cRare loot found in container: §e" + stack.getName().getString() + "§c!");
+                        info("§cRare loot found in container: §e" + stack.getHoverName().getString() + "§c!");
                         playAlert();
                         hasAlertedForCurrentScreen = true;
                         break;
@@ -1007,21 +1007,21 @@ public class ChambersAssistant extends Module {
     private void updateOminousDrink() {
         if (!autoDrinkOminous.get()) return;
 
-        boolean hasOmen = mc.player.hasStatusEffect(StatusEffects.BAD_OMEN) || mc.player.hasStatusEffect(StatusEffects.TRIAL_OMEN);
+        boolean hasOmen = mc.player.hasEffect(MobEffects.BAD_OMEN) || mc.player.hasEffect(MobEffects.TRIAL_OMEN);
         boolean hasNearbySpawner = targets.entrySet().stream()
-            .anyMatch(e -> e.getValue() == TargetType.TRIAL_SPAWNER && e.getKey().isWithinDistance(mc.player.getPos(), 8.0));
+            .anyMatch(e -> e.getValue() == TargetType.TRIAL_SPAWNER && e.getKey().closerToCenterThan(mc.player.position(), 8.0));
 
-        if (!hasOmen && hasNearbySpawner && mc.currentScreen == null) {
+        if (!hasOmen && hasNearbySpawner && mc.screen == null) {
             int bottleSlot = findOminousBottle();
             if (bottleSlot != -1) {
-                previousDrinkSlot = mc.player.getInventory().selectedSlot;
-                mc.player.getInventory().selectedSlot = bottleSlot;
-                mc.options.useKey.setPressed(true);
+                previousDrinkSlot = mc.player.getInventory().getSelectedSlot();
+                mc.player.getInventory().setSelectedSlot(bottleSlot);
+                mc.options.keyUse.setDown(true);
             }
         } else {
-            mc.options.useKey.setPressed(false);
+            mc.options.keyUse.setDown(false);
             if (previousDrinkSlot != -1) {
-                mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
                 previousDrinkSlot = -1;
             }
         }
@@ -1029,7 +1029,7 @@ public class ChambersAssistant extends Module {
 
     private int findOminousBottle() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.OMINOUS_BOTTLE)) return i;
+            if (mc.player.getInventory().getItem(i).is(Items.OMINOUS_BOTTLE)) return i;
         }
         return -1;
     }
@@ -1042,8 +1042,8 @@ public class ChambersAssistant extends Module {
             return;
         }
 
-        boolean hasBadOmen = mc.player.hasStatusEffect(StatusEffects.BAD_OMEN);
-        boolean hasTrialOmen = mc.player.hasStatusEffect(StatusEffects.TRIAL_OMEN);
+        boolean hasBadOmen = mc.player.hasEffect(MobEffects.BAD_OMEN);
+        boolean hasTrialOmen = mc.player.hasEffect(MobEffects.TRIAL_OMEN);
 
         if (hasTrialOmen) {
             warning("You have the Trial Omen effect! Ominous Spawners are active.");
@@ -1058,11 +1058,11 @@ public class ChambersAssistant extends Module {
 
     private void checkForPlayers() {
         if (!disconnectOnPlayer.get()) return;
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (player == mc.player || player.isSpectator()) continue;
             if (player.distanceTo(mc.player) < 128) {
                 info("§cPlayer detected in render distance! Disconnecting...");
-                mc.getNetworkHandler().getConnection().disconnect(new DisconnectionInfo(Text.literal("Player detected in render distance")));
+                mc.getConnection().getConnection().disconnect(new DisconnectionDetails(Component.literal("Player detected in render distance")));
                 return;
             }
         }
@@ -1071,16 +1071,16 @@ public class ChambersAssistant extends Module {
     private void playAlert() {
         if (mc.player == null) return;
         SoundEvent sound = switch (alertSound.get()) {
-            case LEVEL_UP -> SoundEvents.ENTITY_PLAYER_LEVELUP;
-            case RAVAGER_ROAR -> SoundEvents.ENTITY_RAVAGER_ROAR;
-            case EXPERIENCE_ORB -> SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP;
-            case BELL -> SoundEvents.BLOCK_BELL_USE;
-            default -> SoundEvents.ENTITY_ENDER_DRAGON_GROWL;
+            case LEVEL_UP -> SoundEvents.PLAYER_LEVELUP;
+            case RAVAGER_ROAR -> SoundEvents.RAVAGER_ROAR;
+            case EXPERIENCE_ORB -> SoundEvents.EXPERIENCE_ORB_PICKUP;
+            case BELL -> SoundEvents.BELL_BLOCK;
+            default -> SoundEvents.ENDER_DRAGON_GROWL;
         };
         mc.player.playSound(sound, alertVolume.get().floatValue(), 1.0f);
     }
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get();
         double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
@@ -1089,7 +1089,7 @@ public class ChambersAssistant extends Module {
             double expansion = spread * i;
             int layerAlpha = Math.max(4, (int) (baseAlpha * (1.0 - (double)(i - 1) / layers)));
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -1111,7 +1111,7 @@ public class ChambersAssistant extends Module {
         return Math.min(255, Math.max(0, (int)(min + (max - min) * f)));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -1120,23 +1120,23 @@ public class ChambersAssistant extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
     }
 
-    private void renderEntity(Render3DEvent event, boolean isSpectral, boolean isPulse, boolean isEnabled, boolean renderBeam, List<? extends net.minecraft.entity.Entity> entities, SettingColor color) {
+    private void renderEntity(Render3DEvent event, boolean isSpectral, boolean isPulse, boolean isEnabled, boolean renderBeam, List<? extends net.minecraft.world.entity.Entity> entities, SettingColor color) {
         if (!isEnabled || entities.isEmpty()) return;
 
         double beamSize = beamWidth.get() / 100.0;
-        for (net.minecraft.entity.Entity entity : entities) {
+        for (net.minecraft.world.entity.Entity entity : entities) {
             if (!entity.isAlive()) continue;
-            Box box = entity.getBoundingBox();
-            Vec3d pos = entity.getPos();
-            Box beamBox = renderBeam ? new Box(
+            AABB box = entity.getBoundingBox();
+            Vec3 pos = entity.position();
+            AABB beamBox = renderBeam ? new AABB(
                 pos.x - beamSize, pos.y, pos.z - beamSize,
-                pos.x + beamSize, mc.world.getHeight(), pos.z + beamSize
+                pos.x + beamSize, mc.level.getHeight(), pos.z + beamSize
             ) : null;
 
             if (isSpectral) {
@@ -1182,16 +1182,16 @@ public class ChambersAssistant extends Module {
     }
 
     private void pruneBlockTargets() {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
         Set<BlockPos> toRemove = new HashSet<>();
         for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
             BlockPos pos = entry.getKey();
             int chunkX = pos.getX() >> 4;
             int chunkZ = pos.getZ() >> 4;
 
-            if (mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
-                if (mc.world.getBlockState(pos).isAir() || !validateBlockType(currentBlock, entry.getValue())) {
+            if (mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
+                if (mc.level.getBlockState(pos).isAir() || !validateBlockType(currentBlock, entry.getValue())) {
                     toRemove.add(pos);
                 }
             } else {
@@ -1227,8 +1227,8 @@ public class ChambersAssistant extends Module {
 
     private boolean performSafetyChecks() {
         if (!autoDisableOnLowHealth.get()) return false;
-        boolean hasTotem = mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)
-            || mc.player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING);
+        boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
+            || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
         if (hasTotem && mc.player.getHealth() <= 6) { 
             error("Health is critical, disabling to prevent totem pop.");
             toggle();

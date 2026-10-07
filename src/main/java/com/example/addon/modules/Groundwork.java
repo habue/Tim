@@ -28,20 +28,20 @@ import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FallingBlock;
-import net.minecraft.entity.Entity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class Groundwork extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -169,8 +169,8 @@ public class Groundwork extends Module {
         .defaultValue(Keybind.none())
         .visible(() -> mainMode.get() == MainMode.Scaffold && scaffoldMode.get() != ScaffoldMode.Disabled)
         .action(() -> {
-            if (mc.currentScreen != null) return;
-            if (mc.player == null || mc.world == null) return;
+            if (mc.screen != null) return;
+            if (mc.player == null || mc.level == null) return;
 
             if (scaffoldMode.get() == ScaffoldMode.Single) {
                 queuedSinglePlace = true;
@@ -367,7 +367,7 @@ public class Groundwork extends Module {
     // Runtime State - Groundwork
     private final Deque<BlockPos> placementQueue = new ArrayDeque<>();
     private final Map<BlockPos, Integer> recentPlacements = new HashMap<>();
-    private final BlockPos.Mutable checkingPos = new BlockPos.Mutable();
+    private final BlockPos.MutableBlockPos checkingPos = new BlockPos.MutableBlockPos();
 
     private int tickCounter = 0;
     private int currentTimer = 0;
@@ -417,8 +417,8 @@ public class Groundwork extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null || mc.interactionManager == null) return;
-        if (mc.currentScreen != null) return; // Pause logic if a screen/inventory is open
+        if (mc.player == null || mc.level == null || mc.gameMode == null) return;
+        if (mc.screen != null) return; // Pause logic if a screen/inventory is open
 
         // 1. Always handle auto-replenish first to ensure hotbar is ready
         handleAutoReplenish();
@@ -446,7 +446,7 @@ public class Groundwork extends Module {
         }
 
         // 4. Handle Bridge / DoubleBridge Logic
-        if (pauseOnShift.get() && mc.player.isSneaking()) {
+        if (pauseOnShift.get() && mc.player.isShiftKeyDown()) {
             placementQueue.clear();
             return;
         }
@@ -487,7 +487,7 @@ public class Groundwork extends Module {
 
     @EventHandler
     private void onRender3D(Render3DEvent event) {
-        if (!renderPlacements.get() || mc.world == null) return;
+        if (!renderPlacements.get() || mc.level == null) return;
 
         for (BlockPos pos : placementQueue) {
             renderGlowBox(event, pos);
@@ -510,7 +510,7 @@ public class Groundwork extends Module {
 
         Entity target = mc.player;
         if (surroundTarget.get() == SurroundTarget.Others) {
-            target = mc.world.getPlayers().stream()
+            target = mc.level.players().stream()
                 .filter(p -> p != mc.player && p.isAlive() && p.distanceTo(mc.player) <= 5.0)
                 .min(Comparator.comparingDouble(p -> p.distanceTo(mc.player)))
                 .orElse(null);
@@ -518,7 +518,7 @@ public class Groundwork extends Module {
             if (target == null) return;
         }
 
-        BlockPos basePos = target.getBlockPos();
+        BlockPos basePos = target.blockPosition();
         List<BlockPos> positions = new ArrayList<>();
 
         positions.add(basePos.north());
@@ -527,18 +527,18 @@ public class Groundwork extends Module {
         positions.add(basePos.west());
 
         if (!openTop.get()) {
-            positions.add(basePos.up());
+            positions.add(basePos.above());
         }
         if (placeBottom.get()) {
-            positions.add(basePos.down());
+            positions.add(basePos.below());
         }
 
         for (BlockPos pos : positions) {
-            if (mc.world.getBlockState(pos).isReplaceable()) {
+            if (mc.level.getBlockState(pos).canBeReplaced()) {
                 int slot = findValidSlot(pos);
                 if (slot != -1) {
                     if (placeBlock(pos, slot)) {
-                        recentPlacements.put(pos.toImmutable(), tickCounter);
+                        recentPlacements.put(pos.immutable(), tickCounter);
                         surroundCooldown = surroundDelay.get();
                     }
                     return; // Place one block per cycle
@@ -562,40 +562,40 @@ public class Groundwork extends Module {
     private void collectBlocks() {
         if (mainMode.get() == MainMode.DoubleBridge) {
             // Determine perpendicular axis based on facing
-            Direction facing = mc.player.getHorizontalFacing();
-            Vec3d perp = (facing == Direction.NORTH || facing == Direction.SOUTH) ? new Vec3d(1, 0, 0) : new Vec3d(0, 0, 1);
+            Direction facing = mc.player.getDirection();
+            Vec3 perp = (facing == Direction.NORTH || facing == Direction.SOUTH) ? new Vec3(1, 0, 0) : new Vec3(0, 0, 1);
 
             // Directly below player (both sides)
-            addBlockToQueue(BlockPos.ofFloored(mc.player.getX() + perp.x * 0.5, groundworkLayer, mc.player.getZ() + perp.z * 0.5), true);
-            addBlockToQueue(BlockPos.ofFloored(mc.player.getX() - perp.x * 0.5, groundworkLayer, mc.player.getZ() - perp.z * 0.5), true);
+            addBlockToQueue(BlockPos.containing(mc.player.getX() + perp.x * 0.5, groundworkLayer, mc.player.getZ() + perp.z * 0.5), true);
+            addBlockToQueue(BlockPos.containing(mc.player.getX() - perp.x * 0.5, groundworkLayer, mc.player.getZ() - perp.z * 0.5), true);
 
-            Vec3d movement = getMovementVector();
-            if (movement.lengthSquared() == 0) return;
+            Vec3 movement = getMovementVector();
+            if (movement.lengthSqr() == 0) return;
 
             // Ahead of player based on movement (both sides)
             for (double i = STEP_DISTANCE; i <= EXTEND_DISTANCE + 0.001; i += STEP_DISTANCE) {
                 double targetX = mc.player.getX() + movement.x * i;
                 double targetZ = mc.player.getZ() + movement.z * i;
-                addBlockToQueue(BlockPos.ofFloored(targetX + perp.x * 0.5, groundworkLayer, targetZ + perp.z * 0.5), false);
-                addBlockToQueue(BlockPos.ofFloored(targetX - perp.x * 0.5, groundworkLayer, targetZ - perp.z * 0.5), false);
+                addBlockToQueue(BlockPos.containing(targetX + perp.x * 0.5, groundworkLayer, targetZ + perp.z * 0.5), false);
+                addBlockToQueue(BlockPos.containing(targetX - perp.x * 0.5, groundworkLayer, targetZ - perp.z * 0.5), false);
             }
         } else {
             // Standard 1-wide Bridge
-            addBlockToQueue(BlockPos.ofFloored(mc.player.getX(), groundworkLayer, mc.player.getZ()), true);
+            addBlockToQueue(BlockPos.containing(mc.player.getX(), groundworkLayer, mc.player.getZ()), true);
 
-            Vec3d movement = getMovementVector();
-            if (movement.lengthSquared() == 0) return;
+            Vec3 movement = getMovementVector();
+            if (movement.lengthSqr() == 0) return;
 
             for (double i = STEP_DISTANCE; i <= EXTEND_DISTANCE + 0.001; i += STEP_DISTANCE) {
                 double targetX = mc.player.getX() + movement.x * i;
                 double targetZ = mc.player.getZ() + movement.z * i;
-                addBlockToQueue(BlockPos.ofFloored(targetX, groundworkLayer, targetZ), false);
+                addBlockToQueue(BlockPos.containing(targetX, groundworkLayer, targetZ), false);
             }
         }
     }
 
     private void addBlockToQueue(BlockPos pos, boolean priority) {
-        BlockPos immutable = pos.toImmutable();
+        BlockPos immutable = pos.immutable();
 
         if (!isBlockOpen(immutable) || placementQueue.contains(immutable) || recentPlacements.containsKey(immutable)) {
             return;
@@ -626,7 +626,7 @@ public class Groundwork extends Module {
     }
 
     private boolean placeBlock(BlockPos pos, int slot) {
-        ItemStack stack = mc.player.getInventory().getStack(slot);
+        ItemStack stack = mc.player.getInventory().getItem(slot);
         if (!(stack.getItem() instanceof BlockItem item)) return false;
 
         // Track before placing to prevent replenish losing context when stack hits 0
@@ -636,8 +636,8 @@ public class Groundwork extends Module {
         if (!InvUtils.swap(slot, true)) return false;
 
         try {
-            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, getHitResult(pos));
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, getHitResult(pos));
+            mc.player.swing(InteractionHand.MAIN_HAND);
             playBlockSound(item, pos);
             return true;
         } finally {
@@ -647,23 +647,23 @@ public class Groundwork extends Module {
 
     private BlockHitResult getHitResult(BlockPos pos) {
         for (Direction dir : Direction.values()) {
-            BlockPos neighbor = pos.offset(dir);
-            BlockState state = mc.world.getBlockState(neighbor);
+            BlockPos neighbor = pos.relative(dir);
+            BlockState state = mc.level.getBlockState(neighbor);
 
-            if (state.isReplaceable() || !state.getFluidState().isEmpty()) continue;
+            if (state.canBeReplaced() || !state.getFluidState().isEmpty()) continue;
 
             Direction face = dir.getOpposite();
-            Vec3d hitVec = Vec3d.ofCenter(neighbor).add(
-                face.getOffsetX() * 0.5,
-                face.getOffsetY() * 0.5,
-                face.getOffsetZ() * 0.5
+            Vec3 hitVec = Vec3.atCenterOf(neighbor).add(
+                face.getStepX() * 0.5,
+                face.getStepY() * 0.5,
+                face.getStepZ() * 0.5
             );
 
             return new BlockHitResult(hitVec, face, neighbor, false);
         }
 
         // Fallback (though usually invalid for legit placement)
-        return new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
+        return new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
     }
 
     /**
@@ -675,13 +675,13 @@ public class Groundwork extends Module {
         List<Integer> validSlots = new ArrayList<>();
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (!(stack.getItem() instanceof BlockItem item)) continue;
 
             Block block = item.getBlock();
             if (!isBlockAllowed(block) || block instanceof FallingBlock) continue;
 
-            if (Block.isShapeFullCube(block.getDefaultState().getCollisionShape(mc.world, pos))) {
+            if (Block.isShapeFullBlock(block.defaultBlockState().getCollisionShape(mc.level, pos))) {
                 validSlots.add(i);
             }
         }
@@ -715,7 +715,7 @@ public class Groundwork extends Module {
 
     private boolean handleScaffold() {
         if (mainMode.get() != MainMode.Scaffold || scaffoldMode.get() == ScaffoldMode.Disabled) return false;
-        if (mc.currentScreen != null) return false;
+        if (mc.screen != null) return false;
 
         if (scaffoldCooldown > 0) scaffoldCooldown--;
 
@@ -753,8 +753,8 @@ public class Groundwork extends Module {
     }
 
     private boolean attemptScaffoldPlace() {
-        if (mc.player == null || mc.world == null) return false;
-        if (requireFlying.get() && !mc.player.isGliding()) {
+        if (mc.player == null || mc.level == null) return false;
+        if (requireFlying.get() && !mc.player.isFallFlying()) {
             info("Cannot place: You are not gliding.");
             return false;
         }
@@ -765,18 +765,18 @@ public class Groundwork extends Module {
             return false;
         }
 
-        BlockPos basePos = mc.player.getBlockPos();
+        BlockPos basePos = mc.player.blockPosition();
         int yOffsetBlocks = (int) Math.floor(scaffoldYOffset.get());
-        BlockPos targetPos = basePos.down(yOffsetBlocks > 0 ? yOffsetBlocks : 1);
+        BlockPos targetPos = basePos.below(yOffsetBlocks > 0 ? yOffsetBlocks : 1);
 
         int lookAhead = scaffoldLookAhead.get();
         if (lookAhead > 0) {
-            Direction facing = mc.player.getHorizontalFacing();
-            targetPos = targetPos.offset(facing, lookAhead);
+            Direction facing = mc.player.getDirection();
+            targetPos = targetPos.relative(facing, lookAhead);
         }
 
-        BlockState state = mc.world.getBlockState(targetPos);
-        if (!state.isReplaceable()) {
+        BlockState state = mc.level.getBlockState(targetPos);
+        if (!state.canBeReplaced()) {
             info("Cannot place: Target space is already occupied.");
             return false;
         }
@@ -788,8 +788,8 @@ public class Groundwork extends Module {
             platformQueue.clear();
             for (int x = -2; x <= 2; x++) {
                 for (int z = -2; z <= 2; z++) {
-                    BlockPos p = targetPos.add(x, 0, z);
-                    if (mc.world.getBlockState(p).isReplaceable()) {
+                    BlockPos p = targetPos.offset(x, 0, z);
+                    if (mc.level.getBlockState(p).canBeReplaced()) {
                         platformQueue.add(p);
                     }
                 }
@@ -803,15 +803,15 @@ public class Groundwork extends Module {
     }
 
     private boolean isInOpenAir() {
-        BlockPos pos = mc.player.getBlockPos();
-        return mc.world.getBlockState(pos.north()).isAir() &&
-               mc.world.getBlockState(pos.south()).isAir() &&
-               mc.world.getBlockState(pos.east()).isAir() &&
-               mc.world.getBlockState(pos.west()).isAir() &&
-               mc.world.getBlockState(pos.up().north()).isAir() &&
-               mc.world.getBlockState(pos.up().south()).isAir() &&
-               mc.world.getBlockState(pos.up().east()).isAir() &&
-               mc.world.getBlockState(pos.up().west()).isAir();
+        BlockPos pos = mc.player.blockPosition();
+        return mc.level.getBlockState(pos.north()).isAir() &&
+               mc.level.getBlockState(pos.south()).isAir() &&
+               mc.level.getBlockState(pos.east()).isAir() &&
+               mc.level.getBlockState(pos.west()).isAir() &&
+               mc.level.getBlockState(pos.above().north()).isAir() &&
+               mc.level.getBlockState(pos.above().south()).isAir() &&
+               mc.level.getBlockState(pos.above().east()).isAir() &&
+               mc.level.getBlockState(pos.above().west()).isAir();
     }
 
     private void handlePlatformBuilding() {
@@ -847,10 +847,10 @@ public class Groundwork extends Module {
         int blockSlot = findScaffoldBlockSlot();
         if (blockSlot == -1) return false;
 
-        BlockState state = mc.world.getBlockState(targetPos);
-        if (!state.isReplaceable()) return false;
+        BlockState state = mc.level.getBlockState(targetPos);
+        if (!state.canBeReplaced()) return false;
 
-        ItemStack originalStack = mc.player.getInventory().getStack(blockSlot);
+        ItemStack originalStack = mc.player.getInventory().getItem(blockSlot);
         if (originalStack.getItem() instanceof BlockItem bi) {
             // Track before placing to prevent replenish losing context when stack hits 0
             lastPlacedBlock = bi.getBlock();
@@ -861,21 +861,21 @@ public class Groundwork extends Module {
 
         Direction placeDir;
         BlockPos placeAgainst;
-        Vec3d hitVec;
+        Vec3 hitVec;
 
         if (allowAirPlace) {
             placeDir = Direction.UP;
             placeAgainst = targetPos;
-            hitVec = Vec3d.ofCenter(targetPos);
+            hitVec = Vec3.atCenterOf(targetPos);
         } else {
             placeDir = Direction.UP;
-            placeAgainst = targetPos.up();
+            placeAgainst = targetPos.above();
 
-            if (!mc.world.getBlockState(placeAgainst).isSideSolidFullSquare(mc.world, placeAgainst, Direction.DOWN)) {
+            if (!mc.level.getBlockState(placeAgainst).isFaceSturdy(mc.level, placeAgainst, Direction.DOWN)) {
                 Direction found = null;
                 for (Direction dir : Direction.values()) {
-                    BlockPos neighbor = targetPos.offset(dir);
-                    if (mc.world.getBlockState(neighbor).isSideSolidFullSquare(mc.world, neighbor, dir.getOpposite())) {
+                    BlockPos neighbor = targetPos.relative(dir);
+                    if (mc.level.getBlockState(neighbor).isFaceSturdy(mc.level, neighbor, dir.getOpposite())) {
                         found = dir;
                         placeAgainst = neighbor;
                         break;
@@ -886,17 +886,17 @@ public class Groundwork extends Module {
                 }
                 placeDir = found.getOpposite();
             }
-            hitVec = Vec3d.ofCenter(targetPos)
-                .add(Vec3d.of(placeDir.getOpposite().getVector()).multiply(0.5));
+            hitVec = Vec3.atCenterOf(targetPos)
+                .add(Vec3.atLowerCornerOf(placeDir.getOpposite().getUnitVec3i()).scale(0.5));
         }
 
         InvUtils.swap(blockSlot, scaffoldSilent.get());
 
         BlockHitResult hitResult = new BlockHitResult(hitVec, placeDir, placeAgainst, false);
-        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hitResult);
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
 
         if (scaffoldSwing.get()) {
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         }
 
         InvUtils.swapBack();
@@ -913,7 +913,7 @@ public class Groundwork extends Module {
         List<Integer> validSlots = new ArrayList<>();
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (!(stack.getItem() instanceof BlockItem item)) continue;
 
             Block block = item.getBlock();
@@ -950,7 +950,7 @@ public class Groundwork extends Module {
         if (!autoReplenish.get()) return;
         if (lastPlacedHotbarSlot == -1 || lastPlacedBlock == null) return;
 
-        ItemStack hotbarStack = mc.player.getInventory().getStack(lastPlacedHotbarSlot);
+        ItemStack hotbarStack = mc.player.getInventory().getItem(lastPlacedHotbarSlot);
         boolean needsReplenish = false;
 
         if (hotbarStack.isEmpty()) {
@@ -968,7 +968,7 @@ public class Groundwork extends Module {
 
         if (needsReplenish) {
             for (int i = 9; i < 36; i++) {
-                ItemStack invStack = mc.player.getInventory().getStack(i);
+                ItemStack invStack = mc.player.getInventory().getItem(i);
                 if (invStack.getItem() instanceof BlockItem bi && bi.getBlock() == lastPlacedBlock) {
                     InvUtils.move().from(i).to(lastPlacedHotbarSlot);
                     return; // Move one stack per tick to avoid packet spam
@@ -982,7 +982,7 @@ public class Groundwork extends Module {
 
         boolean hasAny = false;
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.getItem() instanceof BlockItem item) {
                 if (isBlockAllowed(item.getBlock())) {
                     hasAny = true;
@@ -1017,7 +1017,7 @@ public class Groundwork extends Module {
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) {
                 checkingPos.set(pX + x, groundworkLayer, pZ + z);
-                if (!mc.world.getBlockState(checkingPos).isAir()) continue;
+                if (!mc.level.getBlockState(checkingPos).isAir()) continue;
 
                 double dx = checkingPos.getX() + 0.5 - mc.player.getX();
                 double dz = checkingPos.getZ() + 0.5 - mc.player.getZ();
@@ -1028,24 +1028,24 @@ public class Groundwork extends Module {
         return false;
     }
 
-    private Vec3d getMovementVector() {
-        Vec3d move = Vec3d.ZERO;
-        float yaw = mc.player.getYaw();
+    private Vec3 getMovementVector() {
+        Vec3 move = Vec3.ZERO;
+        float yaw = mc.player.getYRot();
 
-        if (mc.options.forwardKey.isPressed()) move = move.add(Vec3d.fromPolar(0, yaw));
-        if (mc.options.backKey.isPressed()) move = move.add(Vec3d.fromPolar(0, yaw + 180));
-        if (mc.options.leftKey.isPressed()) move = move.add(Vec3d.fromPolar(0, yaw - 90));
-        if (mc.options.rightKey.isPressed()) move = move.add(Vec3d.fromPolar(0, yaw + 90));
+        if (mc.options.keyUp.isDown()) move = move.add(Vec3.directionFromRotation(0, yaw));
+        if (mc.options.keyDown.isDown()) move = move.add(Vec3.directionFromRotation(0, yaw + 180));
+        if (mc.options.keyLeft.isDown()) move = move.add(Vec3.directionFromRotation(0, yaw - 90));
+        if (mc.options.keyRight.isDown()) move = move.add(Vec3.directionFromRotation(0, yaw + 90));
 
-        return move.lengthSquared() == 0 ? Vec3d.ZERO : move.normalize();
+        return move.lengthSqr() == 0 ? Vec3.ZERO : move.normalize();
     }
 
     private int getPlayerLayerY() {
-        return BlockPos.ofFloored(mc.player.getX(), mc.player.getY(), mc.player.getZ()).down().getY();
+        return BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ()).below().getY();
     }
 
     private boolean isBlockOpen(BlockPos pos) {
-        return pos.getY() == groundworkLayer && mc.world.getBlockState(pos).isReplaceable();
+        return pos.getY() == groundworkLayer && mc.level.getBlockState(pos).canBeReplaced();
     }
 
     private boolean isBlockValid(BlockPos pos) {
@@ -1064,12 +1064,12 @@ public class Groundwork extends Module {
     // --- Render/Sound Helpers ---
 
     private void renderGlowBox(Render3DEvent event, BlockPos pos) {
-        Box box = new Box(pos);
+        AABB box = new AABB(pos);
         renderGlowLayers(event, box, sideColor.get());
         event.renderer.box(box, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
     }
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get();
         double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
@@ -1080,7 +1080,7 @@ public class Groundwork extends Module {
             int layerAlpha = Math.max(4, (int)(baseAlpha * (1.0 - t * t)));
 
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -1093,10 +1093,10 @@ public class Groundwork extends Module {
     }
 
     private void playBlockSound(BlockItem item, BlockPos pos) {
-        BlockSoundGroup sound = item.getBlock().getDefaultState().getSoundGroup();
-        mc.world.playSound(
+        SoundType sound = item.getBlock().defaultBlockState().getSoundType();
+        mc.level.playLocalSound(
             pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
-            sound.getPlaceSound(), SoundCategory.BLOCKS,
+            sound.getPlaceSound(), SoundSource.BLOCKS,
             (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F, false
         );
     }

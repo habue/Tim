@@ -17,16 +17,16 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Items;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class Handhold extends Module {
     
@@ -312,11 +312,11 @@ public class Handhold extends Module {
         }
     }
 
-    private PlayerEntity getTarget() {
+    private Player getTarget() {
         if (targetName.get() == null || targetName.get().isEmpty()) return null;
-        if (mc.world == null) return null;
+        if (mc.level == null) return null;
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (player != mc.player &&
                 player.getName().getString().equalsIgnoreCase(targetName.get())) {
                 return player;
@@ -335,33 +335,33 @@ public class Handhold extends Module {
     }
 
     private void forceDisconnect(String reason) {
-        if (mc.player != null && mc.player.networkHandler != null && mc.player.networkHandler.getConnection() != null) {
-            mc.player.networkHandler.getConnection().disconnect(Text.of(reason));
+        if (mc.player != null && mc.player.connection != null && mc.player.connection.getConnection() != null) {
+            mc.player.connection.getConnection().disconnect(Component.nullToEmpty(reason));
         }
     }
 
     private void firePanicRocket() {
-        if (hasFiredPanicRocket || !mc.player.isGliding()) return;
+        if (hasFiredPanicRocket || !mc.player.isFallFlying()) return;
 
-        if (mc.player.getOffHandStack().isOf(Items.FIREWORK_ROCKET)) {
-            mc.interactionManager.interactItem(mc.player, Hand.OFF_HAND);
+        if (mc.player.getOffhandItem().is(Items.FIREWORK_ROCKET)) {
+            mc.gameMode.useItem(mc.player, InteractionHand.OFF_HAND);
             hasFiredPanicRocket = true;
             return;
         }
 
         FindItemResult rocketResult = InvUtils.findInHotbar(Items.FIREWORK_ROCKET);
         if (rocketResult.found()) {
-            int prevSlot = mc.player.getInventory().selectedSlot;
+            int prevSlot = mc.player.getInventory().getSelectedSlot();
             InvUtils.swap(rocketResult.slot(), false);
-            mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+            mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
             InvUtils.swap(prevSlot, false);
             hasFiredPanicRocket = true;
         }
     }
 
-    private void lookAtSmooth(Vec3d target) {
-        Vec3d diff = target.subtract(mc.player.getEyePos());
-        if (diff.lengthSquared() < 0.01) return;
+    private void lookAtSmooth(Vec3 target) {
+        Vec3 diff = target.subtract(mc.player.getEyePosition());
+        if (diff.lengthSqr() < 0.01) return;
 
         double targetYawExact = Math.toDegrees(Math.atan2(-diff.x, diff.z));
         float targetYaw = (float) targetYawExact;
@@ -374,13 +374,13 @@ public class Handhold extends Module {
             targetYaw += offset;
         }
         
-        float currentYaw = mc.player.getYaw();
-        float diffYaw = MathHelper.wrapDegrees(targetYaw - currentYaw);
+        float currentYaw = mc.player.getYRot();
+        float diffYaw = Mth.wrapDegrees(targetYaw - currentYaw);
         
         float desiredChange = diffYaw * rotationSpeed.get().floatValue();
         
         if (limitRotationSpeed.get()) {
-            desiredChange = MathHelper.clamp(desiredChange, 
+            desiredChange = Mth.clamp(desiredChange, 
                 -maxRotationPerTick.get().floatValue(), 
                  maxRotationPerTick.get().floatValue());
         }
@@ -389,23 +389,23 @@ public class Handhold extends Module {
         
         float newYaw = currentYaw + desiredChange;
         
-        mc.player.setYaw(newYaw);
-        mc.player.bodyYaw = newYaw;
-        mc.player.headYaw = newYaw;
+        mc.player.setYRot(newYaw);
+        mc.player.yBodyRot = newYaw;
+        mc.player.yHeadRot = newYaw;
     }
 
-    private boolean isObstacleInWay(Vec3d targetPos) {
+    private boolean isObstacleInWay(Vec3 targetPos) {
         if (!pauseOnObstacle.get()) return false;
-        BlockHitResult hit = mc.world.raycast(new RaycastContext(
-            mc.player.getEyePos(), targetPos, RaycastContext.ShapeType.COLLIDER, 
-            RaycastContext.FluidHandling.NONE, mc.player
+        BlockHitResult hit = mc.level.clip(new ClipContext(
+            mc.player.getEyePosition(), targetPos, ClipContext.Block.COLLIDER, 
+            ClipContext.Fluid.NONE, mc.player
         ));
         return hit.getType() == HitResult.Type.BLOCK;
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         boolean targetExists = getTarget() != null;
 
@@ -415,7 +415,7 @@ public class Handhold extends Module {
         if (role.get() == Role.Follower && safetyDisconnect.get() && !targetName.get().isEmpty()) {
             
             if (wasInWorld && !targetExists && followerState == FollowerState.TRACKING) {
-                lastKnownYaw = mc.player.getYaw(); 
+                lastKnownYaw = mc.player.getYRot(); 
                 followerState = FollowerState.PANIC_BOOST;
                 panicTimer = 3; 
                 waitTimerTicks = (int)(disconnectDelay.get() * 20.0); 
@@ -424,9 +424,9 @@ public class Handhold extends Module {
             }
 
             if (followerState == FollowerState.PANIC_BOOST) {
-                mc.player.setYaw(lastKnownYaw);
-                mc.player.bodyYaw = lastKnownYaw;
-                mc.player.headYaw = lastKnownYaw;
+                mc.player.setYRot(lastKnownYaw);
+                mc.player.yBodyRot = lastKnownYaw;
+                mc.player.yHeadRot = lastKnownYaw;
                 firePanicRocket();
                 panicTimer--;
                 if (panicTimer <= 0) followerState = FollowerState.WAITING;
@@ -434,9 +434,9 @@ public class Handhold extends Module {
             }
 
             if (followerState == FollowerState.WAITING) {
-                mc.player.setYaw(lastKnownYaw);
-                mc.player.bodyYaw = lastKnownYaw;
-                mc.player.headYaw = lastKnownYaw;
+                mc.player.setYRot(lastKnownYaw);
+                mc.player.yBodyRot = lastKnownYaw;
+                mc.player.yHeadRot = lastKnownYaw;
 
                 waitTimerTicks--;
                 
@@ -487,13 +487,13 @@ public class Handhold extends Module {
         // LEADER LOGIC (Dynamic Pace Control)
         // ═══════════════════════════════════════════════════════════════════════
         if (role.get() == Role.Leader) {
-            if (!enablePaceControl.get() || !mc.player.isGliding()) {
+            if (!enablePaceControl.get() || !mc.player.isFallFlying()) {
                 if (leaderState == LeaderState.SLOWING_DOWN) restoreRocketPilot();
                 leaderState = LeaderState.NORMAL;
                 return;
             }
 
-            PlayerEntity follower = getTarget();
+            Player follower = getTarget();
             // Calculate exact horizontal distance (ignore Y differences)
             double dx = mc.player.getX() - follower.getX();
             double dz = mc.player.getZ() - follower.getZ();
@@ -512,9 +512,9 @@ public class Handhold extends Module {
                     info("Follower caught up. Resuming normal flight.");
                 } else {
                     // Force nose up to bleed horizontal speed safely
-                    mc.player.setPitch(slowdownPitch.get().floatValue());
-                    mc.player.bodyYaw = mc.player.getYaw();
-                    mc.player.headYaw = mc.player.getYaw();
+                    mc.player.setXRot(slowdownPitch.get().floatValue());
+                    mc.player.yBodyRot = mc.player.getYRot();
+                    mc.player.yHeadRot = mc.player.getYRot();
                 }
             }
             return; 
@@ -523,18 +523,18 @@ public class Handhold extends Module {
         // ═══════════════════════════════════════════════════════════════════════
         // STANDARD FOLLOWER TRACKING LOGIC
         // ═══════════════════════════════════════════════════════════════════════
-        PlayerEntity target = getTarget(); 
+        Player target = getTarget(); 
         boolean targetFlying = isFallFlying(target);
 
         if (lookAtTarget.get()) {
             if (obstaclePauseTimer > 0) {
                 obstaclePauseTimer--;
             } else {
-                Vec3d lookPos = targetFlying ? 
-                    target.getPos().add(target.getVelocity().multiply(5)) : 
-                    target.getPos();
+                Vec3 lookPos = targetFlying ? 
+                    target.position().add(target.getDeltaMovement().scale(5)) : 
+                    target.position();
                     
-                if (mc.player.isGliding() && isObstacleInWay(lookPos)) {
+                if (mc.player.isFallFlying() && isObstacleInWay(lookPos)) {
                     obstaclePauseTimer = obstaclePauseTicks.get();
                 } else {
                     lookAtSmooth(lookPos);
@@ -594,7 +594,7 @@ public class Handhold extends Module {
             return String.format("DC in %.1fs", remainingSecs);
         }
 
-        PlayerEntity target = getTarget();
+        Player target = getTarget();
         if (target == null) return "Searching...";
         return target.getName().getString() + (isFallFlying(target) ? " ✈" : " 👁");
     }

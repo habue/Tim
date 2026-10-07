@@ -27,29 +27,29 @@ import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.BedBlock;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.gui.screen.DeathScreen;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.AttributeModifiersComponent;
-import net.minecraft.component.type.FoodComponent;
-import net.minecraft.component.type.ItemEnchantmentsComponent;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.Enchantments;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
-import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.food.FoodProperties;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ItemAttributeModifiers;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 public class ServerHealthcareSystem extends Module {
 
@@ -115,7 +115,7 @@ public class ServerHealthcareSystem extends Module {
         .description("Cycles chestplate mode: Chestplate -> Elytra -> Smart.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null) return;
+            if (mc.screen != null) return;
             ChestplateMode current = chestplateMode.get();
             ChestplateMode next = switch (current) {
                 case Chestplate -> ChestplateMode.Elytra;
@@ -134,7 +134,7 @@ public class ServerHealthcareSystem extends Module {
         .description("Quickly toggle smart chestplate on/off.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null) return;
+            if (mc.screen != null) return;
             if (chestplateMode.get() == ChestplateMode.Smart) {
                 chestplateMode.set(ChestplateMode.Chestplate);
                 info("Smart Chestplate: OFF");
@@ -152,7 +152,7 @@ public class ServerHealthcareSystem extends Module {
         .description("Manually swap between chestplate and elytra.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null || mc.player == null) return;
+            if (mc.screen != null || mc.player == null) return;
             manualSwapRequested = true;
         })
         .visible(() -> mode.get() == OperationMode.Default && autoArmor.get() && chestplateMode.get() == ChestplateMode.Smart)
@@ -201,7 +201,7 @@ public class ServerHealthcareSystem extends Module {
         .build()
     );
 
-    private final Setting<Set<RegistryKey<Enchantment>>> ignoredEnchantments = sgAutoArmor.add(new EnchantmentListSetting.Builder()
+    private final Setting<Set<ResourceKey<Enchantment>>> ignoredEnchantments = sgAutoArmor.add(new EnchantmentListSetting.Builder()
         .name("ignored-enchantments")
         .description("Armor with these enchantments will be ignored by Auto Armor.")
         .defaultValue(Enchantments.BINDING_CURSE)
@@ -322,13 +322,13 @@ public class ServerHealthcareSystem extends Module {
         .description("Hotkey to automatically break the nearest bed when in Quick Respawn mode.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null) return;
+            if (mc.screen != null) return;
             if (mode.get() == OperationMode.QuickRespawn) {
                 BlockPos nearest = findNearestBed();
                 if (nearest != null) {
                     bedToBreak = nearest;
                     breakTickCounter = 0;
-                    bedOriginalHotbarSlot = mc.player.getInventory().selectedSlot;
+                    bedOriginalHotbarSlot = mc.player.getInventory().getSelectedSlot();
                     info("Initiating bed breaking at %s...", nearest.toShortString());
                 } else {
                     warning("No bed found nearby to break.");
@@ -394,7 +394,7 @@ public class ServerHealthcareSystem extends Module {
     public void onActivate() {
         if (mc.player != null) {
             lastHealth = mc.player.getHealth();
-            highestHungerSeen = mc.player.getHungerManager().getFoodLevel();
+            highestHungerSeen = mc.player.getFoodData().getFoodLevel();
         }
         resetState();
 
@@ -419,7 +419,7 @@ public class ServerHealthcareSystem extends Module {
     private void onGameJoined(GameJoinedEvent event) {
         if (mc.player != null) {
             lastHealth = mc.player.getHealth();
-            highestHungerSeen = mc.player.getHungerManager().getFoodLevel();
+            highestHungerSeen = mc.player.getFoodData().getFoodLevel();
         }
         resetState();
         if (autoTotem.get()) tickAutoTotem();
@@ -462,7 +462,7 @@ public class ServerHealthcareSystem extends Module {
     }
 
     private void stopEating() {
-        mc.options.useKey.setPressed(false);
+        mc.options.keyUse.setDown(false);
         isEating              = false;
         eatHotbarSlot         = -1;
         eatOriginalHotbarSlot = -1;
@@ -473,7 +473,7 @@ public class ServerHealthcareSystem extends Module {
     }
 
     private void finishEating() {
-        mc.options.useKey.setPressed(false);
+        mc.options.keyUse.setDown(false);
 
         if (swapBack.get() && eatOriginalHotbarSlot != -1 && eatOriginalHotbarSlot != eatHotbarSlot) {
             InvUtils.swap(eatOriginalHotbarSlot, false);
@@ -491,22 +491,22 @@ public class ServerHealthcareSystem extends Module {
 
     private void sendUseItemPacket() {
         if (mc.player == null) return;
-        mc.player.networkHandler.sendPacket(
-            new PlayerInteractItemC2SPacket(
-                Hand.MAIN_HAND,
-                mc.player.currentScreenHandler.getRevision(),
-                mc.player.getYaw(),
-                mc.player.getPitch()
+        mc.player.connection.send(
+            new ServerboundUseItemPacket(
+                InteractionHand.MAIN_HAND,
+                mc.player.containerMenu.getStateId(),
+                mc.player.getYRot(),
+                mc.player.getXRot()
             )
         );
-        mc.player.swingHand(Hand.MAIN_HAND);
+        mc.player.swing(InteractionHand.MAIN_HAND);
     }
 
     // ── Tick ──────────────────────────────────────────────────────────────────
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         // Anti-AFK is always active while the module is enabled
         tickAntiAfk();
@@ -529,14 +529,14 @@ public class ServerHealthcareSystem extends Module {
     }
 
     private void tickAntiAfk() {
-        if (mc.player == null || mc.player.networkHandler == null) return;
+        if (mc.player == null || mc.player.connection == null) return;
 
         antiAfkTickCounter++;
 
         if (antiAfkTickCounter >= antiAfkNextSwingTicks) {
             // Swing the hand — this sends HandSwingC2SPacket, which most
             // servers count as activity and prevents AFK kicks.
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.player.swing(InteractionHand.MAIN_HAND);
 
             // Reset counter and schedule next swing (never same as previous)
             antiAfkTickCounter    = 0;
@@ -588,15 +588,15 @@ public class ServerHealthcareSystem extends Module {
     }
 
     private void tickAutoRespawn() {
-        if (autoRespawn.get() && mc.currentScreen instanceof DeathScreen) {
-            mc.player.requestRespawn();
+        if (autoRespawn.get() && mc.screen instanceof DeathScreen) {
+            mc.player.respawn();
             mc.setScreen(null);
         }
     }
 
     private void tickQuickRespawnMode() {
         if (bedToBreak != null) {
-            if (!(mc.world.getBlockState(bedToBreak).getBlock() instanceof BedBlock)) {
+            if (!(mc.level.getBlockState(bedToBreak).getBlock() instanceof BedBlock)) {
                 info("Bed at %s broken.", bedToBreak.toShortString());
                 bedToBreak = null;
                 if (bedOriginalHotbarSlot != -1) {
@@ -606,7 +606,7 @@ public class ServerHealthcareSystem extends Module {
                 return;
             }
 
-            if (mc.player.getPos().distanceTo(Vec3d.ofCenter(bedToBreak)) > 6.0) {
+            if (mc.player.position().distanceTo(Vec3.atCenterOf(bedToBreak)) > 6.0) {
                 warning("Too far from bed, stopping breaking.");
                 bedToBreak = null;
                 if (bedOriginalHotbarSlot != -1) {
@@ -618,16 +618,16 @@ public class ServerHealthcareSystem extends Module {
 
             int bestToolSlot = findBestTool(bedToBreak);
 
-            if (bestToolSlot != -1 && mc.player.getInventory().selectedSlot != bestToolSlot) {
+            if (bestToolSlot != -1 && mc.player.getInventory().getSelectedSlot() != bestToolSlot) {
                 if (bedOriginalHotbarSlot == -1) {
-                    bedOriginalHotbarSlot = mc.player.getInventory().selectedSlot;
+                    bedOriginalHotbarSlot = mc.player.getInventory().getSelectedSlot();
                 }
                 InvUtils.swap(bestToolSlot, false);
             }
 
             Rotations.rotate(Rotations.getYaw(bedToBreak), Rotations.getPitch(bedToBreak), () -> {
-                mc.interactionManager.updateBlockBreakingProgress(bedToBreak, Direction.UP);
-                mc.player.swingHand(Hand.MAIN_HAND);
+                mc.gameMode.continueDestroyBlock(bedToBreak, Direction.UP);
+                mc.player.swing(InteractionHand.MAIN_HAND);
             });
 
             breakTickCounter++;
@@ -637,7 +637,7 @@ public class ServerHealthcareSystem extends Module {
     private void tickAutoTotem() {
         if (!autoTotem.get()) return;
 
-        if (!mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
+        if (!mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
             FindItemResult totem = InvUtils.find(Items.TOTEM_OF_UNDYING);
             if (totem.found()) {
                 InvUtils.move().from(totem.slot()).toOffhand();
@@ -661,25 +661,25 @@ public class ServerHealthcareSystem extends Module {
             if (slot == EquipmentSlot.LEGS && ignoredArmorSlot.get() == IgnoredArmorSlot.Leggings) continue;
             if (slot == EquipmentSlot.FEET && ignoredArmorSlot.get() == IgnoredArmorSlot.Boots) continue;
 
-            ItemStack current   = mc.player.getEquippedStack(slot);
+            ItemStack current   = mc.player.getItemBySlot(slot);
             int       bestValue = getArmorValue(current);
 
             if (slot == EquipmentSlot.CHEST && chestplateMode.get() == ChestplateMode.Elytra
-                    && current.isOf(Items.ELYTRA)) {
+                    && current.is(Items.ELYTRA)) {
                 bestValue = 1_000_000;
             }
 
             int bestSlot = -1;
             for (int j = 0; j < 36; j++) {
-                ItemStack stack = mc.player.getInventory().getStack(j);
+                ItemStack stack = mc.player.getInventory().getItem(j);
                 if (stack.isEmpty()) continue;
                 if (hasIgnoredEnchantment(stack)) continue;
-                var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+                var equippable = stack.get(DataComponents.EQUIPPABLE);
                 if (equippable == null || equippable.slot() != slot) continue;
 
                 int value = getArmorValue(stack);
                 if (slot == EquipmentSlot.CHEST && chestplateMode.get() == ChestplateMode.Elytra
-                        && stack.isOf(Items.ELYTRA)) {
+                        && stack.is(Items.ELYTRA)) {
                     value = 1_000_000;
                 }
 
@@ -694,10 +694,10 @@ public class ServerHealthcareSystem extends Module {
         if (chestplateMode.get() != ChestplateMode.Smart || mc.player == null) return;
 
         long now = System.currentTimeMillis();
-        boolean onGround = mc.player.isOnGround();
+        boolean onGround = mc.player.onGround();
 
         // Detect jump (transition from ground to air while moving up)
-        if (wasOnGround && !onGround && mc.player.getY() > mc.player.prevY + 0.1) {
+        if (wasOnGround && !onGround && mc.player.getY() > mc.player.yo + 0.1) {
             jumpTime = now;
         }
 
@@ -706,14 +706,14 @@ public class ServerHealthcareSystem extends Module {
             jumpTime = -1;
         }
 
-        ItemStack chest = mc.player.getEquippedStack(EquipmentSlot.CHEST);
+        ItemStack chest = mc.player.getItemBySlot(EquipmentSlot.CHEST);
         long timeSinceLastSwap = now - lastSwapTime;
 
         // Manual swap override
         if (manualSwapRequested) {
             manualSwapRequested = false;
             if (timeSinceLastSwap >= swapCooldownMs.get()) {
-                if (chest.isOf(Items.ELYTRA)) {
+                if (chest.is(Items.ELYTRA)) {
                     swapToChestplate();
                 } else {
                     swapToElytra();
@@ -738,14 +738,14 @@ public class ServerHealthcareSystem extends Module {
             shouldElytra = true;
         }
 
-        if (shouldElytra && !chest.isOf(Items.ELYTRA) && timeSinceLastSwap >= swapCooldownMs.get()) {
+        if (shouldElytra && !chest.is(Items.ELYTRA) && timeSinceLastSwap >= swapCooldownMs.get()) {
             swapToElytra();
             lastSwapTime = now;
         }
 
         // Swap back to CHESTPLATE on landing
         if (swapBackOnLand.get() && onGround && !wasOnGround
-                && chest.isOf(Items.ELYTRA)
+                && chest.is(Items.ELYTRA)
                 && timeSinceLastSwap >= swapCooldownMs.get()) {
             swapToChestplate();
             lastSwapTime = now;
@@ -769,11 +769,11 @@ public class ServerHealthcareSystem extends Module {
         int bestValue = -1;
 
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty() || hasIgnoredEnchantment(stack)) continue;
-            var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+            var equippable = stack.get(DataComponents.EQUIPPABLE);
             if (equippable == null || equippable.slot() != EquipmentSlot.CHEST) continue;
-            if (stack.isOf(Items.ELYTRA)) continue;
+            if (stack.is(Items.ELYTRA)) continue;
 
             int value = getArmorValue(stack);
             if (value > bestValue) { bestValue = value; bestSlot = i; }
@@ -798,12 +798,12 @@ public class ServerHealthcareSystem extends Module {
         if (moveWaitTicks > 0) {
             moveWaitTicks--;
             if (moveWaitTicks == 0) {
-                ItemStack hotbarStack = mc.player.getInventory().getStack(eatHotbarSlot);
-                if (eatTargetItem != null && hotbarStack.isOf(eatTargetItem)) {
-                    mc.player.getInventory().selectedSlot = eatHotbarSlot;
-                    eatTicksRemaining = hotbarStack.getItem().getMaxUseTime(hotbarStack, mc.player);
+                ItemStack hotbarStack = mc.player.getInventory().getItem(eatHotbarSlot);
+                if (eatTargetItem != null && hotbarStack.is(eatTargetItem)) {
+                    mc.player.getInventory().setSelectedSlot(eatHotbarSlot);
+                    eatTicksRemaining = hotbarStack.getItem().getUseDuration(hotbarStack, mc.player);
                     eatStartupTicks = 3;
-                    mc.options.useKey.setPressed(true);
+                    mc.options.keyUse.setDown(true);
                     sendUseItemPacket();
                     isEating = true;
                 } else {
@@ -816,7 +816,7 @@ public class ServerHealthcareSystem extends Module {
         if (!isEating) {
             boolean needsHealth = healthThreshold.get() > 0 && mc.player.getHealth() <= healthThreshold.get();
 
-            int currentHunger = mc.player.getHungerManager().getFoodLevel();
+            int currentHunger = mc.player.getFoodData().getFoodLevel();
 
             if (highestHungerSeen == -1 || currentHunger > highestHungerSeen) {
                 highestHungerSeen = currentHunger;
@@ -836,23 +836,23 @@ public class ServerHealthcareSystem extends Module {
             int foodSlot = findBestFood(isHealthEmergency);
             if (foodSlot == -1) return;
 
-            ItemStack foodStack = mc.player.getInventory().getStack(foodSlot);
+            ItemStack foodStack = mc.player.getInventory().getItem(foodSlot);
             eatTargetItem = foodStack.getItem();
 
-            if (skipIfRegen.get() && !isHealthEmergency && (foodStack.isOf(Items.GOLDEN_APPLE) || foodStack.isOf(Items.ENCHANTED_GOLDEN_APPLE))) {
-                if (mc.player.hasStatusEffect(StatusEffects.REGENERATION)) {
+            if (skipIfRegen.get() && !isHealthEmergency && (foodStack.is(Items.GOLDEN_APPLE) || foodStack.is(Items.ENCHANTED_GOLDEN_APPLE))) {
+                if (mc.player.hasEffect(MobEffects.REGENERATION)) {
                     return;
                 }
             }
 
-            eatOriginalHotbarSlot = mc.player.getInventory().selectedSlot;
+            eatOriginalHotbarSlot = mc.player.getInventory().getSelectedSlot();
 
             if (foodSlot < 9) {
                 eatHotbarSlot = foodSlot;
-                mc.player.getInventory().selectedSlot = eatHotbarSlot;
-                eatTicksRemaining = foodStack.getItem().getMaxUseTime(foodStack, mc.player);
+                mc.player.getInventory().setSelectedSlot(eatHotbarSlot);
+                eatTicksRemaining = foodStack.getItem().getUseDuration(foodStack, mc.player);
                 eatStartupTicks = 3;
-                mc.options.useKey.setPressed(true);
+                mc.options.keyUse.setDown(true);
                 sendUseItemPacket();
                 isEating = true;
             } else {
@@ -870,31 +870,31 @@ public class ServerHealthcareSystem extends Module {
         } else {
             if (eatStartupTicks > 0) {
                 eatStartupTicks--;
-                mc.player.getInventory().selectedSlot = eatHotbarSlot;
-                mc.options.useKey.setPressed(true);
+                mc.player.getInventory().setSelectedSlot(eatHotbarSlot);
+                mc.options.keyUse.setDown(true);
                 if (eatTicksRemaining > 0) eatTicksRemaining--;
                 return;
             }
 
-            ItemStack hotbarStack = mc.player.getInventory().getStack(eatHotbarSlot);
-            boolean hotbarHasFood = eatTargetItem != null && hotbarStack.isOf(eatTargetItem);
+            ItemStack hotbarStack = mc.player.getInventory().getItem(eatHotbarSlot);
+            boolean hotbarHasFood = eatTargetItem != null && hotbarStack.is(eatTargetItem);
 
             if (!hotbarHasFood) {
                 finishEating();
                 return;
             }
 
-            if (mc.currentScreen != null) {
+            if (mc.screen != null) {
                 finishEating();
                 return;
             }
 
-            mc.player.getInventory().selectedSlot = eatHotbarSlot;
-            mc.options.useKey.setPressed(true);
+            mc.player.getInventory().setSelectedSlot(eatHotbarSlot);
+            mc.options.keyUse.setDown(true);
 
             if (!mc.player.isUsingItem() && hotbarHasFood) {
                 sendUseItemPacket();
-                eatTicksRemaining = hotbarStack.getItem().getMaxUseTime(hotbarStack, mc.player);
+                eatTicksRemaining = hotbarStack.getItem().getUseDuration(hotbarStack, mc.player);
                 return;
             }
 
@@ -908,12 +908,12 @@ public class ServerHealthcareSystem extends Module {
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (mc.player == null || mc.world == null || mode.get() != OperationMode.Default || !disconnectOnTotemPop.get()) return;
+        if (mc.player == null || mc.level == null || mode.get() != OperationMode.Default || !disconnectOnTotemPop.get()) return;
 
-        if (event.packet instanceof EntityStatusS2CPacket packet) {
-            if (packet.getStatus() == 35
-                    && packet.getEntity(mc.world) != null
-                    && packet.getEntity(mc.world).getId() == mc.player.getId()) {
+        if (event.packet instanceof ClientboundEntityEventPacket packet) {
+            if (packet.getEventId() == 35
+                    && packet.getEntity(mc.level) != null
+                    && packet.getEntity(mc.level).getId() == mc.player.getId()) {
                 disconnect("[SHS] Disconnected on totem pop. " + countTotems() + " totems remaining.");
             }
         }
@@ -922,15 +922,15 @@ public class ServerHealthcareSystem extends Module {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void disconnect(String reason) {
-        if (mc.player != null && mc.player.networkHandler != null) {
-            mc.player.networkHandler.getConnection().disconnect(Text.literal(reason));
+        if (mc.player != null && mc.player.connection != null) {
+            mc.player.connection.getConnection().disconnect(Component.literal(reason));
         }
         this.toggle();
     }
 
     private int findEmptyHotbarSlot() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isEmpty()) return i;
+            if (mc.player.getInventory().getItem(i).isEmpty()) return i;
         }
         return -1;
     }
@@ -956,7 +956,7 @@ public class ServerHealthcareSystem extends Module {
         int hotbar = -1;
         int inv = -1;
         for (int i = 0; i < 36; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.ENCHANTED_GOLDEN_APPLE)) {
+            if (mc.player.getInventory().getItem(i).is(Items.ENCHANTED_GOLDEN_APPLE)) {
                 if (i < 9) { if (hotbar == -1) hotbar = i; }
                 else { if (inv == -1) inv = i; }
             }
@@ -972,14 +972,14 @@ public class ServerHealthcareSystem extends Module {
         int hotbarBestValue = -1;
 
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
 
-            FoodComponent food = stack.get(DataComponentTypes.FOOD);
+            FoodProperties food = stack.get(DataComponents.FOOD);
             if (food == null) continue;
 
             int value = (int) (food.nutrition() + food.saturation() * 10);
-            if (stack.getMaxCount() > 1) value += 100;
+            if (stack.getMaxStackSize() > 1) value += 100;
 
             if (i < 9) {
                 if (value > hotbarBestValue) {
@@ -1004,16 +1004,16 @@ public class ServerHealthcareSystem extends Module {
         int inventoryGapple  = -1;
 
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
 
-            if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE)) {
+            if (stack.is(Items.ENCHANTED_GOLDEN_APPLE)) {
                 if (i < 9) {
                     if (hotbarEgapple == -1) hotbarEgapple = i;
                 } else {
                     if (inventoryEgapple == -1) inventoryEgapple = i;
                 }
-            } else if (stack.isOf(Items.GOLDEN_APPLE)) {
+            } else if (stack.is(Items.GOLDEN_APPLE)) {
                 if (i < 9) {
                     if (hotbarGapple == -1) hotbarGapple = i;
                 } else {
@@ -1037,28 +1037,28 @@ public class ServerHealthcareSystem extends Module {
 
     private boolean hasIgnoredEnchantment(ItemStack stack) {
         if (ignoredEnchantments.get().isEmpty()) return false;
-        ItemEnchantmentsComponent enchants = stack.get(DataComponentTypes.ENCHANTMENTS);
+        ItemEnchantments enchants = stack.get(DataComponents.ENCHANTMENTS);
         if (enchants == null) return false;
-        for (RegistryEntry<Enchantment> entry : enchants.getEnchantments()) {
-            if (entry.getKey().isPresent() && ignoredEnchantments.get().contains(entry.getKey().get())) return true;
+        for (Holder<Enchantment> entry : enchants.keySet()) {
+            if (entry.unwrapKey().isPresent() && ignoredEnchantments.get().contains(entry.unwrapKey().get())) return true;
         }
         return false;
     }
 
     private int getArmorValue(ItemStack stack) {
         if (stack.isEmpty()) return -1;
-        if (stack.getOrDefault(DataComponentTypes.EQUIPPABLE, null) == null) return -1;
+        if (stack.getOrDefault(DataComponents.EQUIPPABLE, null) == null) return -1;
 
-        AttributeModifiersComponent attrs = stack.getOrDefault(DataComponentTypes.ATTRIBUTE_MODIFIERS, null);
+        ItemAttributeModifiers attrs = stack.getOrDefault(DataComponents.ATTRIBUTE_MODIFIERS, null);
         double armor = 0, toughness = 0;
 
         if (attrs != null) {
             for (var entry : attrs.modifiers()) {
                 if (entry == null || entry.attribute() == null || entry.modifier() == null) continue;
-                var keyOpt = entry.attribute().getKey();
+                var keyOpt = entry.attribute().unwrapKey();
                 if (keyOpt == null || keyOpt.isEmpty()) continue;
-                String id = keyOpt.get().getValue().toString();
-                double v  = entry.modifier().value();
+                String id = keyOpt.get().identifier().toString();
+                double v  = entry.modifier().amount();
                 if      (id.equals("minecraft:generic.armor"))           armor     += v;
                 else if (id.equals("minecraft:generic.armor_toughness")) toughness += v;
             }
@@ -1075,37 +1075,37 @@ public class ServerHealthcareSystem extends Module {
     private int countTotems() {
         if (mc.player == null) return 0;
         int count = 0;
-        for (ItemStack stack : mc.player.getInventory().main) {
-            if (stack.isOf(Items.TOTEM_OF_UNDYING)) count += stack.getCount();
+        for (ItemStack stack : mc.player.getInventory().getNonEquipmentItems()) {
+            if (stack.is(Items.TOTEM_OF_UNDYING)) count += stack.getCount();
         }
-        if (mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING))
-            count += mc.player.getOffHandStack().getCount();
+        if (mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING))
+            count += mc.player.getOffhandItem().getCount();
         return count;
     }
 
     private int getEnchantmentLevel(ItemStack stack, String id) {
-        ItemEnchantmentsComponent enchants = stack.get(DataComponentTypes.ENCHANTMENTS);
+        ItemEnchantments enchants = stack.get(DataComponents.ENCHANTMENTS);
         if (enchants == null) return 0;
-        for (RegistryEntry<Enchantment> entry : enchants.getEnchantments()) {
-            if (entry.getKey().isPresent() && entry.getKey().get().getValue().toString().equals(id))
+        for (Holder<Enchantment> entry : enchants.keySet()) {
+            if (entry.unwrapKey().isPresent() && entry.unwrapKey().get().identifier().toString().equals(id))
                 return enchants.getLevel(entry);
         }
         return 0;
     }
 
     private BlockPos findNearestBed() {
-        if (mc.player == null || mc.world == null) return null;
+        if (mc.player == null || mc.level == null) return null;
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         double minDistanceSq = Double.MAX_VALUE;
         BlockPos nearestBed = null;
 
         for (int x = -5; x <= 5; x++) {
             for (int y = -5; y <= 5; y++) {
                 for (int z = -5; z <= 5; z++) {
-                    BlockPos pos = playerPos.add(x, y, z);
-                    if (mc.world.getBlockState(pos).getBlock() instanceof BedBlock) {
-                        double distanceSq = playerPos.getSquaredDistance(pos);
+                    BlockPos pos = playerPos.offset(x, y, z);
+                    if (mc.level.getBlockState(pos).getBlock() instanceof BedBlock) {
+                        double distanceSq = playerPos.distSqr(pos);
                         if (distanceSq < minDistanceSq) {
                             minDistanceSq = distanceSq;
                             nearestBed = pos;
@@ -1118,17 +1118,17 @@ public class ServerHealthcareSystem extends Module {
     }
 
     private int findBestTool(BlockPos blockPos) {
-        if (mc.player == null || mc.world == null) return -1;
+        if (mc.player == null || mc.level == null) return -1;
 
-        BlockState state = mc.world.getBlockState(blockPos);
+        BlockState state = mc.level.getBlockState(blockPos);
         float bestSpeed = 1.0f;
         int bestSlot = -1;
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
 
-            float speed = stack.getMiningSpeedMultiplier(state);
+            float speed = stack.getDestroySpeed(state);
             if (speed > bestSpeed) { bestSpeed = speed; bestSlot = i; }
         }
         return bestSlot;

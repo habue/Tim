@@ -38,26 +38,26 @@ import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.meteorclient.utils.render.NametagUtils;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.HangingSignBlockEntity;
-import net.minecraft.block.entity.SignBlockEntity;
-import net.minecraft.block.entity.SignText;
-import net.minecraft.client.gui.screen.ingame.AbstractSignEditScreen;
-import net.minecraft.item.DyeItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.UpdateSignC2SPacket;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.PlainTextContent;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextContent;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.screens.inventory.AbstractSignEditScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentContents;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.contents.PlainTextContents;
+import net.minecraft.network.protocol.game.ServerboundSignUpdatePacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.HangingSignBlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class SignScanner extends Module {
     private final SettingGroup sgGeneral   = settings.getDefaultGroup();
@@ -372,7 +372,7 @@ public class SignScanner extends Module {
     // State
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private final Map<BlockPos, List<Text>> signs    = new ConcurrentHashMap<>();
+    private final Map<BlockPos, List<Component>> signs    = new ConcurrentHashMap<>();
     private final Set<BlockPos>             notified = new HashSet<>();
     private int timer = 0;
 
@@ -436,11 +436,11 @@ public class SignScanner extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         double dist    = chunks.get() * 16.0;
         double rangeSq = dist * dist;
-        signs.keySet().removeIf(pos -> pos.getSquaredDistance(mc.player.getPos()) > rangeSq);
+        signs.keySet().removeIf(pos -> pos.distToCenterSqr(mc.player.position()) > rangeSq);
 
         if (cacheSignText.get()) {
             if (timer > 0) { timer--; return; }
@@ -457,9 +457,9 @@ public class SignScanner extends Module {
                     default -> null;
                 };
                 if (texts == null) continue;
-                if (be.getPos().getSquaredDistance(mc.player.getPos()) > rangeSq) continue;
+                if (be.getBlockPos().distToCenterSqr(mc.player.position()) > rangeSq) continue;
 
-                List<Text> lineList = new ArrayList<>();
+                List<Component> lineList = new ArrayList<>();
                 SignText front = texts[0], back = texts[1];
                 if (censorship.get()) { front = censorSignText(front); back = censorSignText(back); }
 
@@ -469,13 +469,13 @@ public class SignScanner extends Module {
                 // Hardcoded ignore empty
                 if (lineList.stream().allMatch(t -> t.getString().isBlank())) continue;
 
-                signs.put(be.getPos(), lineList);
-                currentSigns.add(be.getPos());
+                signs.put(be.getBlockPos(), lineList);
+                currentSigns.add(be.getBlockPos());
 
-                if (chatMessages.get() && !notified.contains(be.getPos())) {
-                    List<String> ss = lineList.stream().map(Text::getString).filter(s -> !s.isBlank()).toList();
+                if (chatMessages.get() && !notified.contains(be.getBlockPos())) {
+                    List<String> ss = lineList.stream().map(Component::getString).filter(s -> !s.isBlank()).toList();
                     if (!ss.isEmpty()) info("Sign found: " + String.join(" | ", ss));
-                    notified.add(be.getPos());
+                    notified.add(be.getBlockPos());
                 }
             }
 
@@ -492,7 +492,7 @@ public class SignScanner extends Module {
     private void finishEditing() {
         if (pendingSign == null) return;
 
-        BlockPos pos = pendingSign.getPos();
+        BlockPos pos = pendingSign.getBlockPos();
 
         List<String> configured = switch (activeProfile.get()) {
             case MESSAGE_1 -> message1Lines.get();
@@ -510,30 +510,30 @@ public class SignScanner extends Module {
             rows[lineIndex] = getCurrentDate();
         }
 
-        mc.player.networkHandler.sendPacket(
-            new UpdateSignC2SPacket(pos, true, rows[0], rows[1], rows[2], rows[3])
+        mc.player.connection.send(
+            new ServerboundSignUpdatePacket(pos, true, rows[0], rows[1], rows[2], rows[3])
         );
 
         if (autoGlowDye.get()) {
             FindItemResult glowSac = InvUtils.findInHotbar(Items.GLOW_INK_SAC);
             if (glowSac.found()) {
                 InvUtils.swap(glowSac.slot(), false);
-                mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND,
-                    new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false));
-                mc.player.swingHand(Hand.MAIN_HAND);
+                mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false));
+                mc.player.swing(InteractionHand.MAIN_HAND);
                 InvUtils.swapBack();
             } else {
                 error("Glow Ink Sac not found in hotbar. Disabling auto-glow-dye.");
                 autoGlowDye.set(false);
             }
 
-            Item dyeItem = DyeItem.byColor(dyeColor.get());
+            Item dyeItem = com.example.addon.utils.PortCompat.dyeItem(dyeColor.get());
             FindItemResult dyeResult = InvUtils.findInHotbar(dyeItem);
             if (dyeResult.found()) {
                 InvUtils.swap(dyeResult.slot(), false);
-                mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND,
-                    new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false));
-                mc.player.swingHand(Hand.MAIN_HAND);
+                mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false));
+                mc.player.swing(InteractionHand.MAIN_HAND);
                 InvUtils.swapBack();
             } else {
                 error("Selected dye (%s) not found in hotbar. Disabling auto-glow-dye.", dyeColor.get().getName());
@@ -541,7 +541,7 @@ public class SignScanner extends Module {
             }
         }
 
-        mc.player.closeHandledScreen();
+        mc.player.closeContainer();
         pendingSign = null;
     }
 
@@ -593,9 +593,9 @@ public class SignScanner extends Module {
     // Sign Text Helpers — Fixed for 1.21+ Text Color API
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void readSignText(SignText signText, List<Text> output) {
-        for (Text t : signText.getMessages(false)) {
-            Text cleaned = cleanSignText(t);
+    private void readSignText(SignText signText, List<Component> output) {
+        for (Component t : signText.getMessages(false)) {
+            Component cleaned = cleanSignText(t);
             if (!cleaned.getString().trim().isEmpty()) output.add(cleaned);
         }
     }
@@ -605,16 +605,16 @@ public class SignScanner extends Module {
     public SignText censorSignText(SignText signText) {
         SignText newText = signText;
         for (int i = 0; i < 4; i++) {
-            newText = newText.withMessage(i, censorText(signText.getMessage(i, false)));
+            newText = newText.setMessage(i, censorText(signText.getMessage(i, false)));
         }
         return newText;
     }
 
-    private Text censorText(Text text) {
-        TextContent content = text.getContent();
-        if (content instanceof PlainTextContent ptc) content = PlainTextContent.of(censor(ptc.string()));
-        MutableText result = MutableText.of(content).setStyle(text.getStyle());
-        for (Text sibling : text.getSiblings()) result.append(censorText(sibling));
+    private Component censorText(Component text) {
+        ComponentContents content = text.getContents();
+        if (content instanceof PlainTextContents ptc) content = PlainTextContents.create(censor(ptc.text()));
+        MutableComponent result = MutableComponent.create(content).setStyle(text.getStyle());
+        for (Component sibling : text.getSiblings()) result.append(censorText(sibling));
         return result;
     }
 
@@ -629,11 +629,11 @@ public class SignScanner extends Module {
         return working;
     }
 
-    private Text cleanSignText(Text text) {
-        return Text.literal(text.getString().replaceAll("§.", "")).setStyle(text.getStyle());
+    private Component cleanSignText(Component text) {
+        return Component.literal(text.getString().replaceAll("§.", "")).setStyle(text.getStyle());
     }
 
-    private String getTextContent(Text text) { return text.getString(); }
+    private String getTextContent(Component text) { return text.getString(); }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Render 2D
@@ -646,15 +646,15 @@ public class SignScanner extends Module {
         List<SignEntry> entries = new ArrayList<>();
 
         try {
-            for (Map.Entry<BlockPos, List<Text>> entry : signs.entrySet()) {
+            for (Map.Entry<BlockPos, List<Component>> entry : signs.entrySet()) {
                 BlockPos   pos      = entry.getKey();
-                List<Text> lineList = entry.getValue();
+                List<Component> lineList = entry.getValue();
                 if (lineList.isEmpty()) continue;
 
-                BlockEntity be = mc.world.getBlockEntity(pos);
-                Vec3d vec = (be instanceof HangingSignBlockEntity)
-                    ? Vec3d.ofCenter(pos).add(0, -0.2, 0)
-                    : Vec3d.ofCenter(pos).add(0,  0.5, 0);
+                BlockEntity be = mc.level.getBlockEntity(pos);
+                Vec3 vec = (be instanceof HangingSignBlockEntity)
+                    ? Vec3.atCenterOf(pos).add(0, -0.2, 0)
+                    : Vec3.atCenterOf(pos).add(0,  0.5, 0);
 
                 Vector3d pos3d = new Vector3d(vec.x, vec.y, vec.z);
                 if (!NametagUtils.to2D(pos3d, scale.get())) continue;
@@ -662,7 +662,7 @@ public class SignScanner extends Module {
             }
         } catch (Exception ignored) {}
 
-        entries.sort(Comparator.comparingDouble(e -> mc.player.squaredDistanceTo(e.pos.toCenterPos())));
+        entries.sort(Comparator.comparingDouble(e -> mc.player.distanceToSqr(e.pos.getCenter())));
 
         List<SignEntry> grouped    = new ArrayList<>();
         double          mergeDistSq = mergeDistance.get() * mergeDistance.get();
@@ -678,7 +678,7 @@ public class SignScanner extends Module {
             if (!merged) grouped.add(entry);
         }
 
-        grouped.sort(Comparator.comparingDouble(e -> -mc.player.squaredDistanceTo(e.pos.toCenterPos())));
+        grouped.sort(Comparator.comparingDouble(e -> -mc.player.distanceToSqr(e.pos.getCenter())));
 
         try {
             for (SignEntry entry : grouped) renderSign(entry, event, tr);
@@ -690,16 +690,16 @@ public class SignScanner extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void renderSign(SignEntry entry, Render2DEvent event, TextRenderer tr) {
-        NametagUtils.begin(entry.pos3d, event.drawContext);
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
+        NametagUtils.begin(entry.pos3d, event.graphics);
 
-        List<Text> linesToRender = new ArrayList<>(entry.lines);
-        if (entry.count > 1) linesToRender.add(Text.literal(entry.count + " signs").formatted(Formatting.YELLOW));
+
+
+        List<Component> linesToRender = new ArrayList<>(entry.lines);
+        if (entry.count > 1) linesToRender.add(Component.literal(entry.count + " signs").withStyle(ChatFormatting.YELLOW));
 
         double lh       = tr.getHeight();
         double maxWidth = 0;
-        for (Text t : linesToRender) maxWidth = Math.max(maxWidth, tr.getWidth(getTextContent(t)));
+        for (Component t : linesToRender) maxWidth = Math.max(maxWidth, tr.getWidth(getTextContent(t)));
         double totalH = linesToRender.size() * lh;
 
         double pad = 4.0;
@@ -718,13 +718,13 @@ public class SignScanner extends Module {
             }
             Renderer2D.COLOR.begin();
             Renderer2D.COLOR.quad(bx, by, bw, bh, backgroundColor.get());
-            Renderer2D.COLOR.render(null);
+            Renderer2D.COLOR.render();
         }
 
         tr.begin(1.0, false, true);
         double y = -(linesToRender.size() * lh) / 2.0;
         int i = 0;
-        for (Text lineText : linesToRender) {
+        for (Component lineText : linesToRender) {
             boolean isMergedCountLine = entry.count > 1 && i == linesToRender.size() - 1;
             String line = getTextContent(lineText);
             double x    = -tr.getWidth(line) / 2.0;
@@ -735,7 +735,7 @@ public class SignScanner extends Module {
             } else {
                 color = textColor.get();
                 if (useSignColor.get() && lineText.getStyle().getColor() != null) {
-                    int rgb = lineText.getStyle().getColor().getRgb();
+                    int rgb = lineText.getStyle().getColor().getValue();
                     if (rgb != 0) color = new SettingColor((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, 255);
                 }
             }
@@ -746,9 +746,8 @@ public class SignScanner extends Module {
         }
         tr.end();
 
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        NametagUtils.end(event.drawContext);
+
+        NametagUtils.end(event.graphics);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -772,7 +771,7 @@ public class SignScanner extends Module {
                 withAlpha(gc, layerAlpha)
             );
         }
-        Renderer2D.COLOR.render(null);
+        Renderer2D.COLOR.render();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -812,7 +811,7 @@ public class SignScanner extends Module {
                 withAlpha(pColor, layerAlpha)
             );
         }
-        Renderer2D.COLOR.render(null);
+        Renderer2D.COLOR.render();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -849,7 +848,7 @@ public class SignScanner extends Module {
         Renderer2D.COLOR.quad(ox,                oy + thickness,      thickness, oh - thickness * 2, lc); 
         Renderer2D.COLOR.quad(ox + ow - thickness, oy + thickness,    thickness, oh - thickness * 2, lc); 
 
-        Renderer2D.COLOR.render(null);
+        Renderer2D.COLOR.render();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -866,11 +865,11 @@ public class SignScanner extends Module {
 
     private static class SignEntry {
         BlockPos   pos;
-        List<Text> lines;
+        List<Component> lines;
         Vector3d   pos3d;
         int        count = 1;
 
-        SignEntry(BlockPos pos, List<Text> lines, Vector3d pos3d) {
+        SignEntry(BlockPos pos, List<Component> lines, Vector3d pos3d) {
             this.pos   = pos;
             this.lines = lines;
             this.pos3d = pos3d;

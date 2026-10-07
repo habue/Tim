@@ -6,26 +6,25 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.sound.PositionedSoundInstance;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.SpawnGroup;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.passive.TameableEntity;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.TamableAnimal;
 import java.util.Set;
 
 public class Threaturn extends Module {
     public enum WarningSound {
-        WARDEN_ROAR("Warden Roar", SoundEvents.ENTITY_WARDEN_ROAR),
-        ELDER_GUARDIAN("Elder Guardian", SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE),
-        WITHER_SPAWN("Wither Spawn", SoundEvents.ENTITY_WITHER_SPAWN),
-        GHAST_SCREAM("Ghast Scream", SoundEvents.ENTITY_GHAST_SCREAM),
-        ENDERMAN_STARE("Enderman Stare", SoundEvents.ENTITY_ENDERMAN_STARE),
-        RAID_HORN("Raid Horn", SoundEvents.EVENT_RAID_HORN.value());
+        WARDEN_ROAR("Warden Roar", SoundEvents.WARDEN_ROAR),
+        ELDER_GUARDIAN("Elder Guardian", SoundEvents.ELDER_GUARDIAN_CURSE),
+        WITHER_SPAWN("Wither Spawn", SoundEvents.WITHER_SPAWN),
+        GHAST_SCREAM("Ghast Scream", SoundEvents.GHAST_SCREAM),
+        ENDERMAN_STARE("Enderman Stare", SoundEvents.ENDERMAN_STARE),
+        RAID_HORN("Raid Horn", SoundEvents.RAID_HORN.value());
 
         private final String title;
         private final SoundEvent soundEvent;
@@ -190,7 +189,7 @@ public class Threaturn extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         if (ticksPassed++ < checkDelay.get()) return;
         ticksPassed = 0;
@@ -204,7 +203,7 @@ public class Threaturn extends Module {
         double maxYDiff = maxVertical.get();
         int count = 0;
 
-        for (Entity entity : mc.world.getEntities()) {
+        for (Entity entity : mc.level.entitiesForRendering()) {
             if (entity == mc.player || !entity.isAlive()) continue;
 
             // Vertical boundary check
@@ -217,16 +216,16 @@ public class Threaturn extends Module {
 
             // Nametag and tame filters
             if (ignoreNamed.get() && entity.hasCustomName()) continue;
-            if (ignoreTamed.get() && entity instanceof TameableEntity tameable && tameable.isOwner(mc.player)) continue;
+            if (ignoreTamed.get() && entity instanceof TamableAnimal tameable && tameable.isOwnedBy(mc.player)) continue;
 
             // Aggro/targeting filter
             if (onlyTargeting.get()) {
-                if (!(entity instanceof MobEntity mob) || mob.getTarget() != mc.player) {
+                if (!(entity instanceof Mob mob) || mob.getTarget() != mc.player) {
                     continue;
                 }
             }
 
-            boolean isHostile = onlyHostiles.get() && entity.getType().getSpawnGroup() == SpawnGroup.MONSTER;
+            boolean isHostile = onlyHostiles.get() && entity.getType().getCategory() == MobCategory.MONSTER;
             boolean isInList = entityFilter.get().contains(entity.getType());
 
             if (isHostile || isInList) {
@@ -247,7 +246,7 @@ public class Threaturn extends Module {
         // Play customizable audio alert
         if (playSound.get() && mc.getSoundManager() != null) {
             mc.getSoundManager().play(
-                PositionedSoundInstance.master(
+                SimpleSoundInstance.forUI(
                     soundChoice.get().getSound(),
                     soundPitch.get().floatValue(),
                     soundVolume.get().floatValue()
@@ -260,11 +259,11 @@ public class Threaturn extends Module {
             toggle();
         }
 
-        if (mc.player != null && mc.player.networkHandler != null) {
+        if (mc.player != null && mc.player.connection != null) {
             String coords = String.format("%.0f, %.0f, %.0f", mc.player.getX(), mc.player.getY(), mc.player.getZ());
             Tim.LOG.warn("Threaturn triggered at [{}] with {} nearby entities.", coords, detectedCount);
 
-            Text reason = Text.literal(String.format(
+            Component reason = Component.literal(String.format(
                 "§c[Threaturn] §fEmergency disconnect triggered!\n\n" +
                 "§7Reason: §fMob cluster threshold exceeded in area.\n" +
                 "§7Detected: §c%d mobs §7within §e%.1fm §7(Y-span: §e%.1fm§7)\n" +
@@ -272,7 +271,7 @@ public class Threaturn extends Module {
                 detectedCount, radius.get(), maxVertical.get(), coords
             ));
 
-            mc.player.networkHandler.getConnection().disconnect(reason);
+            mc.player.connection.getConnection().disconnect(reason);
         }
     }
 }

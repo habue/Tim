@@ -11,13 +11,12 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.item.Item;
-import net.minecraft.item.Items;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.world.dimension.DimensionTypes;
-
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.dimension.BuiltinDimensionTypes;
 import com.example.addon.Tim;
 
 public class SafetyNet extends Module {
@@ -34,12 +33,12 @@ public class SafetyNet extends Module {
 
         public SoundEvent getSoundEvent() {
             return switch (this) {
-                case Pling    -> SoundEvents.BLOCK_NOTE_BLOCK_PLING.value();
-                case Bell     -> SoundEvents.BLOCK_NOTE_BLOCK_BELL.value();
-                case Anvil    -> SoundEvents.BLOCK_ANVIL_LAND;
-                case Basedrum -> SoundEvents.BLOCK_NOTE_BLOCK_BASEDRUM.value();
-                case Chime    -> SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value();
-                case Hat      -> SoundEvents.BLOCK_NOTE_BLOCK_HAT.value();
+                case Pling    -> SoundEvents.NOTE_BLOCK_PLING.value();
+                case Bell     -> SoundEvents.NOTE_BLOCK_BELL.value();
+                case Anvil    -> SoundEvents.ANVIL_LAND;
+                case Basedrum -> SoundEvents.NOTE_BLOCK_BASEDRUM.value();
+                case Chime    -> SoundEvents.NOTE_BLOCK_CHIME.value();
+                case Hat      -> SoundEvents.NOTE_BLOCK_HAT.value();
             };
         }
     }
@@ -241,7 +240,7 @@ public class SafetyNet extends Module {
     public void onDeactivate() {
         // Safety: release right click if the module is manually toggled off mid-eat
         if (mc.options != null) {
-            mc.options.useKey.setPressed(false);
+            mc.options.keyUse.setDown(false);
         }
         resetState();
     }
@@ -265,7 +264,7 @@ public class SafetyNet extends Module {
     // -------------------------------------------------------------------------
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         handleChorusEscapeKeybind();
         if (chorusEscapeActive) return; // Bypass normal logic while eating/teleporting
@@ -331,12 +330,12 @@ public class SafetyNet extends Module {
                 warning("No Chorus Fruit found in hotbar! Falling back to normal Safety Net logic.");
                 chorusEscapeActive = false;
             } else {
-                mc.options.useKey.setPressed(true);
+                mc.options.keyUse.setDown(true);
                 hasTriggeredEat = true;
             }
         } else {
             if (!mc.player.isUsingItem()) {
-                mc.options.useKey.setPressed(false);
+                mc.options.keyUse.setDown(false);
                 info("Chorus escape successful. Disabling Safety Net.");
                 toggle();
             }
@@ -344,8 +343,8 @@ public class SafetyNet extends Module {
     }
 
     private boolean isInValidDimension() {
-        boolean inEnd = mc.world.getDimensionEntry().matchesKey(DimensionTypes.THE_END);
-        boolean inOverworld = mc.world.getDimensionEntry().matchesKey(DimensionTypes.OVERWORLD);
+        boolean inEnd = mc.level.dimensionTypeRegistration().is(BuiltinDimensionTypes.END);
+        boolean inOverworld = mc.level.dimensionTypeRegistration().is(BuiltinDimensionTypes.OVERWORLD);
         DimensionMode mode = dimension.get();
 
         if (mode == DimensionMode.Overworld && !inOverworld) return false;
@@ -357,7 +356,7 @@ public class SafetyNet extends Module {
 
     private int getEffectiveWarnY() {
         DimensionMode mode = dimension.get();
-        boolean inEnd = mc.world.getDimensionEntry().matchesKey(DimensionTypes.THE_END);
+        boolean inEnd = mc.level.dimensionTypeRegistration().is(BuiltinDimensionTypes.END);
 
         if (mode == DimensionMode.Overworld) return overworldWarnY.get();
         if (mode == DimensionMode.End) return endWarnY.get();
@@ -371,7 +370,7 @@ public class SafetyNet extends Module {
 
     private int getEffectiveDisconnectY() {
         DimensionMode mode = dimension.get();
-        boolean inEnd = mc.world.getDimensionEntry().matchesKey(DimensionTypes.THE_END);
+        boolean inEnd = mc.level.dimensionTypeRegistration().is(BuiltinDimensionTypes.END);
 
         if (mode == DimensionMode.Overworld) return overworldDisconnectY.get();
         if (mode == DimensionMode.End) return endDisconnectY.get();
@@ -406,21 +405,21 @@ public class SafetyNet extends Module {
     }
 
     private void executeDisconnect(double playerY, int targetDisconnectY) {
-        mc.inGameHud.setTitle(Text.literal("§c§lSAFETY NET DISCONNECT"));
-        mc.inGameHud.setSubtitle(Text.literal(
+        mc.gui.setTitle(Component.literal("§c§lSAFETY NET DISCONNECT"));
+        mc.gui.setSubtitle(Component.literal(
             "§eY: " + String.format("%.1f", playerY) + " §7is below §c" + targetDisconnectY
         ));
 
         info("§cDisconnected — Y §e" + String.format("%.1f", playerY)
             + " §cis below safe threshold §e(" + targetDisconnectY + ")§c.");
 
-        mc.world.disconnect();
-        mc.disconnect();
+        mc.level.disconnect(net.minecraft.client.multiplayer.ClientLevel.DEFAULT_QUIT_MESSAGE);
+        mc.disconnect(new net.minecraft.client.gui.screens.TitleScreen(), false);
     }
 
     private void executeWarning(double playerY, int targetWarnY) {
-        mc.inGameHud.setTitle(Text.literal("§e§l⚠ VOID WARNING"));
-        mc.inGameHud.setSubtitle(Text.literal(
+        mc.gui.setTitle(Component.literal("§e§l⚠ VOID WARNING"));
+        mc.gui.setSubtitle(Component.literal(
             "§fY: §c" + String.format("%.1f", playerY) + "  §f| Safe above: §a" + targetWarnY
         ));
 
@@ -441,8 +440,8 @@ public class SafetyNet extends Module {
     private boolean selectHotbarItem(Item item) {
         if (mc.player == null) return false;
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(item)) {
-                mc.player.getInventory().selectedSlot = i;
+            if (mc.player.getInventory().getItem(i).is(item)) {
+                mc.player.getInventory().setSelectedSlot(i);
                 return true;
             }
         }

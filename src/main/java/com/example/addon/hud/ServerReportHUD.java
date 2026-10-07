@@ -13,12 +13,12 @@ import meteordevelopment.meteorclient.systems.hud.HudElement;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.effect.StatusEffect;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffectCategory;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.world.biome.Biome;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.Holder;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectCategory;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.level.biome.Biome;
 
 public class ServerReportHUD extends HudElement {
 
@@ -29,7 +29,7 @@ public class ServerReportHUD extends HudElement {
         ServerReportHUD::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     // ── Enums ─────────────────────────────────────────────────────────────────
 
@@ -213,7 +213,7 @@ public class ServerReportHUD extends HudElement {
 
     @Override
     public void render(HudRenderer renderer) {
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             if (isInEditor()) {
                 setSize(120, 20);
                 renderer.text("Server Report", x, y, labelColor.get(), false, scale.get());
@@ -236,10 +236,10 @@ public class ServerReportHUD extends HudElement {
         SettingColor weatherValueColor = valueColor.get();
 
         if (showWeather.get()) {
-            if (mc.world.isThundering()) {
+            if (mc.level.isThundering()) {
                 weatherLabel = "Thunderstorm";
                 weatherValueColor = thunderColor.get();
-            } else if (mc.world.isRaining()) {
+            } else if (mc.level.isRaining()) {
                 weatherLabel = "Rain";
                 weatherValueColor = rainColor.get();
             } else {
@@ -253,10 +253,10 @@ public class ServerReportHUD extends HudElement {
         String biomeName = "";
 
         if (showBiome.get()) {
-            RegistryEntry<Biome> biomeEntry = mc.world.getBiome(mc.player.getBlockPos());
-            biomeName = biomeEntry.getKey()
+            Holder<Biome> biomeEntry = mc.level.getBiome(mc.player.blockPosition());
+            biomeName = biomeEntry.unwrapKey()
                 .map(key -> {
-                    String path = key.getValue().getPath();
+                    String path = key.identifier().getPath();
                     // Convert snake_case to Title Case
                     String[] words = path.split("_");
                     StringBuilder sb = new StringBuilder();
@@ -274,13 +274,13 @@ public class ServerReportHUD extends HudElement {
 
         // ── Gather potion effects ─────────────────────────────────────────────
 
-        record EffectEntry(String name, int amplifier, int durationTicks, StatusEffectCategory category) {}
+        record EffectEntry(String name, int amplifier, int durationTicks, MobEffectCategory category) {}
         List<EffectEntry> effects = new ArrayList<>();
 
         if (showEffects.get()) {
-            for (StatusEffectInstance instance : mc.player.getStatusEffects()) {
-                RegistryEntry<StatusEffect> effectEntry = instance.getEffectType();
-                String name = effectEntry.value().getName().getString();
+            for (MobEffectInstance instance : mc.player.getActiveEffects()) {
+                Holder<MobEffect> effectEntry = instance.getEffect();
+                String name = effectEntry.value().getDisplayName().getString();
                 // Clean up translation key fallback if needed
                 if (name.startsWith("effect.")) {
                     String[] parts = name.split("\\.");
@@ -490,7 +490,7 @@ public class ServerReportHUD extends HudElement {
     // ─────────────────────────────────────────────────────────────────────────
 
     /** Sort order: beneficial=0, neutral=1, harmful=2 */
-    private int effectRank(StatusEffectCategory category) {
+    private int effectRank(MobEffectCategory category) {
         return switch (category) {
             case BENEFICIAL -> 0;
             case NEUTRAL    -> 1;

@@ -19,13 +19,13 @@ import meteordevelopment.meteorclient.utils.misc.input.Input;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.Hand;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class ElytraAssistant extends Module {
 
@@ -49,12 +49,12 @@ public class ElytraAssistant extends Module {
 
         public SoundEvent toSoundEvent() {
             return switch (this) {
-                case Anvil         -> SoundEvents.BLOCK_ANVIL_LAND;
-                case WitherSpawn   -> SoundEvents.ENTITY_WITHER_SPAWN;
-                case CreeperPrimed -> SoundEvents.ENTITY_CREEPER_PRIMED;
-                case ExperienceOrb -> SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP;
-                case Bell          -> SoundEvents.BLOCK_BELL_USE;
-                case NoteBassDrum  -> SoundEvents.BLOCK_NOTE_BLOCK_BASEDRUM.value();
+                case Anvil         -> SoundEvents.ANVIL_LAND;
+                case WitherSpawn   -> SoundEvents.WITHER_SPAWN;
+                case CreeperPrimed -> SoundEvents.CREEPER_PRIMED;
+                case ExperienceOrb -> SoundEvents.EXPERIENCE_ORB_PICKUP;
+                case Bell          -> SoundEvents.BELL_BLOCK;
+                case NoteBassDrum  -> SoundEvents.NOTE_BLOCK_BASEDRUM.value();
             };
         }
     }
@@ -116,7 +116,7 @@ public class ElytraAssistant extends Module {
         .description("Key to toggle auto replace.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null) return;
+            if (mc.screen != null) return;
             boolean enabled = !autoReplace.get();
             autoReplace.set(enabled);
             info("Auto Replace " + (enabled ? "enabled" : "disabled") + ".");
@@ -195,8 +195,8 @@ public class ElytraAssistant extends Module {
         .defaultValue(Keybind.none())
         .visible(() -> rocketReplenishEnabled.get() && replenishMode.get() == ReplenishMode.Bind)
         .action(() -> {
-            if (mc.currentScreen != null) return;
-            if (mc.player == null || mc.world == null) return;
+            if (mc.screen != null) return;
+            if (mc.player == null || mc.level == null) return;
             if (!rocketReplenishEnabled.get()) return;
             handleRocketReplenish(false);
         })
@@ -255,7 +255,7 @@ public class ElytraAssistant extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         handleMiddleClick();
         handleAutoReplace();
@@ -270,8 +270,8 @@ public class ElytraAssistant extends Module {
         if (!autoReplace.get()) return;
         if (Modules.get().get(Mendbot.class).isActive()) return;
 
-        ItemStack chestplate = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (!chestplate.isOf(Items.ELYTRA)) return;
+        ItemStack chestplate = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (!chestplate.is(Items.ELYTRA)) return;
 
         int remainingDurability = getRemainingDurability(chestplate);
         if (remainingDurability > durabilityThreshold.get()) {
@@ -283,7 +283,7 @@ public class ElytraAssistant extends Module {
         if (replacement.found()) {
             equipElytraSilently(replacement.slot());
             warning("Elytra durability low! Replaced with fresh elytra.");
-            mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+            mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
             noReplacementWarned = false;
         } else if (!noReplacementWarned) {
             warning("No replacement elytra available!");
@@ -296,8 +296,8 @@ public class ElytraAssistant extends Module {
         int bestSlot = -1;
         int bestDurability = -1;
 
-        for (int i = 0; i < mc.player.getInventory().main.size(); i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+        for (int i = 0; i < mc.player.getInventory().getNonEquipmentItems().size(); i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (!isUsableElytra(stack)) continue;
 
             int durability = getRemainingDurability(stack);
@@ -308,18 +308,18 @@ public class ElytraAssistant extends Module {
         }
 
         return bestSlot != -1
-            ? new FindItemResult(bestSlot, mc.player.getInventory().getStack(bestSlot).getCount())
+            ? new FindItemResult(bestSlot, mc.player.getInventory().getItem(bestSlot).getCount())
             : new FindItemResult(-1, 0);
     }
 
     private boolean isUsableElytra(ItemStack stack) {
         return !stack.isEmpty()
-            && stack.isOf(Items.ELYTRA)
+            && stack.is(Items.ELYTRA)
             && getRemainingDurability(stack) > durabilityThreshold.get();
     }
 
     private int getRemainingDurability(ItemStack elytra) {
-        return elytra.getMaxDamage() - elytra.getDamage();
+        return elytra.getMaxDamage() - elytra.getDamageValue();
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -330,7 +330,7 @@ public class ElytraAssistant extends Module {
         if (middleClickCooldown > 0) middleClickCooldown--;
 
         if (middleClickAction.get() == MiddleClickAction.None) return;
-        if (mc.currentScreen != null) return;
+        if (mc.screen != null) return;
 
         boolean isPressed = Input.isButtonPressed(GLFW.GLFW_MOUSE_BUTTON_MIDDLE);
 
@@ -346,7 +346,7 @@ public class ElytraAssistant extends Module {
     private void executeMiddleClickAction() {
         MiddleClickAction action = middleClickAction.get();
 
-        if (mc.player.isOnGround()) return;
+        if (mc.player.onGround()) return;
 
         ItemUsage target = switch (action) {
             case Rocket -> new ItemUsage(Items.FIREWORK_ROCKET);
@@ -363,16 +363,16 @@ public class ElytraAssistant extends Module {
         if (!result.found()) return;
 
         int slot = result.slot();
-        int previousSlot = mc.player.getInventory().selectedSlot;
+        int previousSlot = mc.player.getInventory().getSelectedSlot();
 
         if (isHotbarSlot(slot)) {
             InvUtils.swap(slot, silentRocket.get());
-            mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+            mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
             InvUtils.swapBack();
         } else {
             InvUtils.move().from(slot).toHotbar(previousSlot);
             InvUtils.swap(previousSlot, silentRocket.get());
-            mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+            mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
             InvUtils.swapBack();
             InvUtils.move().from(previousSlot).to(slot);
         }
@@ -389,16 +389,16 @@ public class ElytraAssistant extends Module {
     private void handleAutoReplenish() {
         if (!rocketReplenishEnabled.get()) return;
         if (replenishMode.get() != ReplenishMode.Automatic) return;
-        if (mc.currentScreen != null) return;
+        if (mc.screen != null) return;
 
         int selectedSlot = useSelectedSlot.get()
-            ? mc.player.getInventory().selectedSlot
+            ? mc.player.getInventory().getSelectedSlot()
             : targetSlot.get() - 1;
 
-        ItemStack targetStack = mc.player.getInventory().getStack(selectedSlot);
+        ItemStack targetStack = mc.player.getInventory().getItem(selectedSlot);
         
         // If the slot is occupied by something else, don't touch it.
-        if (!targetStack.isEmpty() && !targetStack.isOf(Items.FIREWORK_ROCKET)) return;
+        if (!targetStack.isEmpty() && !targetStack.is(Items.FIREWORK_ROCKET)) return;
 
         int currentCount = targetStack.getCount();
         if (currentCount <= autoThreshold.get()) {
@@ -408,10 +408,10 @@ public class ElytraAssistant extends Module {
 
     private void handleRocketReplenish(boolean silent) {
         int selectedSlot = useSelectedSlot.get()
-            ? mc.player.getInventory().selectedSlot
+            ? mc.player.getInventory().getSelectedSlot()
             : targetSlot.get() - 1;
 
-        ItemStack targetStack = mc.player.getInventory().getStack(selectedSlot);
+        ItemStack targetStack = mc.player.getInventory().getItem(selectedSlot);
         Item targetItem = Items.FIREWORK_ROCKET;
 
         if (!targetStack.isEmpty() && targetStack.getItem() != targetItem) {
@@ -419,12 +419,12 @@ public class ElytraAssistant extends Module {
             return;
         }
 
-        if (!mc.player.currentScreenHandler.getCursorStack().isEmpty()) {
+        if (!mc.player.containerMenu.getCarried().isEmpty()) {
             if (!silent) info("Cursor has an item — cannot replenish right now.");
             return;
         }
 
-        int maxCount = targetItem.getMaxCount();
+        int maxCount = targetItem.getDefaultMaxStackSize();
         int currentCount = targetStack.getCount();
         int needed = maxCount - currentCount;
 
@@ -434,7 +434,7 @@ public class ElytraAssistant extends Module {
         }
 
         for (int i = 9; i < 36 && needed > 0; i++) {
-            ItemStack sourceStack = mc.player.getInventory().getStack(i);
+            ItemStack sourceStack = mc.player.getInventory().getItem(i);
             if (sourceStack.isEmpty()) continue;
             if (sourceStack.getItem() != targetItem) continue;
 
@@ -446,12 +446,12 @@ public class ElytraAssistant extends Module {
         int finalCount = maxCount - needed;
 
         if (needed > 0) {
-            if (!silent) info("Replenished " + targetItem.getName().getString()
+            if (!silent) info("Replenished " + targetItem.getName(targetItem.getDefaultInstance()).getString()
                 + " to " + finalCount + " (not enough items in inventory).");
         } else {
-            if (!silent) info("Replenished " + targetItem.getName().getString()
+            if (!silent) info("Replenished " + targetItem.getName(targetItem.getDefaultInstance()).getString()
                 + " to " + maxCount + ".");
-            mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+            mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
         }
     }
 
@@ -484,7 +484,7 @@ public class ElytraAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     public boolean shouldPreventRocketUse() {
-        return isActive() && mc.player.isOnGround();
+        return isActive() && mc.player.onGround();
     }
 
     public boolean shouldSilentRocket() {

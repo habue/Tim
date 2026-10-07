@@ -2,26 +2,26 @@ package com.example.addon.mixin;
 
 import com.example.addon.modules.ElytraAssistant;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.client.network.ClientPlayerInteractionManager;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(ClientPlayerInteractionManager.class)
+@Mixin(value = MultiPlayerGameMode.class, remap = false)
 public class ElytraAssistantMixin {
-    @Inject(method = "interactItem", at = @At("HEAD"), cancellable = true)
-    private void onInteractItem(PlayerEntity player, Hand hand, CallbackInfoReturnable<ActionResult> cir) {
-        ItemStack stack = player.getStackInHand(hand);
-        if (stack.isOf(Items.FIREWORK_ROCKET)) {
+    @Inject(method = "useItem", at = @At("HEAD"), cancellable = true)
+    private void onInteractItem(Player player, InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
+        ItemStack stack = player.getItemInHand(hand);
+        if (stack.is(Items.FIREWORK_ROCKET)) {
             ElytraAssistant module = Modules.get().get(ElytraAssistant.class);
             if (module != null && module.shouldPreventRocketUse()) {
-                cir.setReturnValue(ActionResult.FAIL);
+                cir.setReturnValue(InteractionResult.FAIL);
             }
         }
     }

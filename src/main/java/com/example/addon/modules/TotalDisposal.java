@@ -62,7 +62,7 @@ public class TotalDisposal extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (mc.currentScreen != null) return; // Prevent triggering while in chat or menus
+        if (mc.screen != null) return; // Prevent triggering while in chat or menus
 
         boolean dropPressed = dropKey.get().isPressed();
         boolean killPressed = killKey.get().isPressed();
@@ -99,7 +99,7 @@ public class TotalDisposal extends Module {
 
     private void executeKill() {
         if (mc.player != null) {
-            mc.player.networkHandler.sendChatCommand("kill");
+            mc.player.connection.sendCommand("kill");
             info("Sent /kill command.");
         }
     }

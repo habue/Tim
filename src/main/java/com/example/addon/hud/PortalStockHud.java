@@ -8,12 +8,11 @@ import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.util.math.BlockPos;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,7 +24,7 @@ public class PortalStockHud extends HudElement {
         PortalStockHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     private final SettingGroup sgGeneral  = settings.getDefaultGroup();
     private final SettingGroup sgWarnings = settings.createGroup("Warnings");
@@ -284,9 +283,9 @@ public class PortalStockHud extends HudElement {
             }
         }
 
-        if (showPortalProgress.get() && !portalFramePositions.isEmpty() && mc.world != null) {
+        if (showPortalProgress.get() && !portalFramePositions.isEmpty() && mc.level != null) {
             int total = portalFramePositions.size(), placed = 0;
-            for (BlockPos pos : portalFramePositions) if (mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN)) placed++;
+            for (BlockPos pos : portalFramePositions) if (mc.level.getBlockState(pos).is(Blocks.OBSIDIAN)) placed++;
             double pct = (double) placed / total;
             SettingColor col = pct >= 1.0 ? new SettingColor(60, 255, 60, 255) : pct > 0.4 ? new SettingColor(255, 165, 0, 255) : new SettingColor(255, 60, 60, 255);
             segments.add(new Stat("Portal: ", placed + "/" + total, new ItemStack(Items.OBSIDIAN), col));
@@ -390,10 +389,10 @@ public class PortalStockHud extends HudElement {
         double       portalPct   = 0;
         int          placed = 0, total = 0;
 
-        if (showPortalProgress.get() && !portalFramePositions.isEmpty() && mc.world != null) {
+        if (showPortalProgress.get() && !portalFramePositions.isEmpty() && mc.level != null) {
             total = portalFramePositions.size();
             for (BlockPos pos : portalFramePositions) {
-                if (mc.world.getBlockState(pos).isOf(Blocks.OBSIDIAN)) placed++;
+                if (mc.level.getBlockState(pos).is(Blocks.OBSIDIAN)) placed++;
             }
             portalPct   = (double) placed / total;
             portalLabel = showText ? "Portal: " : "";
@@ -534,14 +533,14 @@ public class PortalStockHud extends HudElement {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private int countItem(net.minecraft.item.Item item) {
+    private int countItem(net.minecraft.world.item.Item item) {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
-            ItemStack s = mc.player.getInventory().getStack(i);
-            if (s.isOf(item)) count += s.getCount();
+            ItemStack s = mc.player.getInventory().getItem(i);
+            if (s.is(item)) count += s.getCount();
         }
-        if (mc.player.getOffHandStack().isOf(item)) count += mc.player.getOffHandStack().getCount();
+        if (mc.player.getOffhandItem().is(item)) count += mc.player.getOffhandItem().getCount();
         return count;
     }
 

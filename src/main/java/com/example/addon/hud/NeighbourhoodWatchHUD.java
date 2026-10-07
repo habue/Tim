@@ -23,23 +23,23 @@ import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.boss.WitherEntity;
-import net.minecraft.entity.decoration.EndCrystalEntity;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.passive.PassiveEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.projectile.FireworkRocketEntity;
-import net.minecraft.entity.vehicle.AbstractMinecartEntity;
-import net.minecraft.entity.vehicle.BoatEntity;
-import net.minecraft.entity.vehicle.ChestMinecartEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.Box;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.world.entity.AgeableMob;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.FireworkRocketEntity;
+import net.minecraft.world.entity.vehicle.minecart.AbstractMinecart;
+import net.minecraft.world.entity.vehicle.boat.Boat;
+import net.minecraft.world.entity.vehicle.minecart.MinecartChest;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 
 public class NeighbourhoodWatchHUD extends HudElement {
 
@@ -50,7 +50,7 @@ public class NeighbourhoodWatchHUD extends HudElement {
         NeighbourhoodWatchHUD::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     // ── Enums ─────────────────────────────────────────────────────────────────
 
@@ -595,13 +595,13 @@ public class NeighbourhoodWatchHUD extends HudElement {
     // Helper: position-based search box clamped to valid world height
     // ─────────────────────────────────────────────────────────────────────────
 
-    private Box playerBox(double range) {
+    private AABB playerBox(double range) {
         double px   = mc.player.getX();
         double py   = mc.player.getY();
         double pz   = mc.player.getZ();
-        double minY = Math.max(py - range, mc.world.getDimension().minY());
-        double maxY = Math.min(py + range, mc.world.getDimension().minY() + mc.world.getDimension().height());
-        return new Box(px - range, minY, pz - range,
+        double minY = Math.max(py - range, mc.level.dimensionType().minY());
+        double maxY = Math.min(py + range, mc.level.dimensionType().minY() + mc.level.dimensionType().height());
+        return new AABB(px - range, minY, pz - range,
                        px + range, maxY, pz + range);
     }
 
@@ -611,7 +611,7 @@ public class NeighbourhoodWatchHUD extends HudElement {
 
     @Override
     public void render(HudRenderer renderer) {
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             if (isInEditor()) {
                 setSize(120, 20);
                 renderer.text("Neighbourhood Watch", x, y, labelColor.get(), false, scale.get());
@@ -641,7 +641,7 @@ public class NeighbourhoodWatchHUD extends HudElement {
         List<NearbyPlayer> nearbyList = new ArrayList<>();
 
         if (showNearby.get()) {
-            for (PlayerEntity player : mc.world.getPlayers()) {
+            for (Player player : mc.level.players()) {
                 if (player == mc.player || player.isSpectator()) continue;
                 float dist = mc.player.distanceTo(player);
                 String name = player.getName().getString();
@@ -672,9 +672,9 @@ public class NeighbourhoodWatchHUD extends HudElement {
         List<OnlinePlayer> onlineEnemyNames  = new ArrayList<>();
         List<OnlinePlayer> onlineProxyNames  = new ArrayList<>();
 
-        if (moduleActive && showOnline.get() && mc.getNetworkHandler() != null) {
-            for (PlayerListEntry entry : mc.getNetworkHandler().getPlayerList()) {
-                String name = entry.getProfile().getName();
+        if (moduleActive && showOnline.get() && mc.getConnection() != null) {
+            for (PlayerInfo entry : mc.getConnection().getOnlinePlayers()) {
+                String name = entry.getProfile().name();
                 if (name == null || name.isEmpty()) continue;
 
                 ItemStack head = drawIcons ? LastSeenPlayerHud.getPlayerHead(entry.getProfile()) : ItemStack.EMPTY;
@@ -698,20 +698,20 @@ public class NeighbourhoodWatchHUD extends HudElement {
 
         if (showFireworks.get()) {
             double fRange = fireworkRange.get();
-            Box fBox = playerBox(fRange);
+            AABB fBox = playerBox(fRange);
 
             Map<String, int[]>   fwCountMap = new LinkedHashMap<>();
             Map<String, float[]> fwDistMap  = new LinkedHashMap<>();
 
-            var rockets = mc.world.getEntitiesByClass(
+            var rockets = mc.level.getEntitiesOfClass(
                 FireworkRocketEntity.class, fBox, e -> true);
 
             for (FireworkRocketEntity rocket : rockets) {
-                float dist = (float) mc.player.getPos().distanceTo(rocket.getPos());
+                float dist = (float) mc.player.position().distanceTo(rocket.position());
                 if (dist > fRange) continue;
 
                 String label;
-                if (showFireworkShotBy.get() && rocket.getOwner() instanceof PlayerEntity shooter) {
+                if (showFireworkShotBy.get() && rocket.getOwner() instanceof Player shooter) {
                     label = shooter.getName().getString();
                 } else {
                     label = "Firework Rocket";
@@ -741,10 +741,10 @@ public class NeighbourhoodWatchHUD extends HudElement {
 
         if (showPearls.get()) {
             double pRange = pearlRange.get();
-            Box pBox = playerBox(pRange);
+            AABB pBox = playerBox(pRange);
 
-            for (Entity e : mc.world.getEntitiesByClass(Entity.class, pBox, en -> en.getType() == EntityType.ENDER_PEARL)) {
-                float dist = (float) mc.player.getPos().distanceTo(e.getPos());
+            for (Entity e : mc.level.getEntitiesOfClass(Entity.class, pBox, en -> en.getType() == EntityType.ENDER_PEARL)) {
+                float dist = (float) mc.player.position().distanceTo(e.position());
                 if (dist > pRange) continue;
                 pearlCount++;
                 if (dist < pearlNearest) pearlNearest = dist;
@@ -757,21 +757,21 @@ public class NeighbourhoodWatchHUD extends HudElement {
 
         if (showItems.get()) {
             double range = itemRange.get();
-            Box searchBox = playerBox(range);
+            AABB searchBox = playerBox(range);
 
             Map<String, int[]>   countMap = new LinkedHashMap<>();
             Map<String, float[]> distMap  = new LinkedHashMap<>();
 
-            for (ItemEntity itemEntity : mc.world.getEntitiesByClass(
+            for (ItemEntity itemEntity : mc.level.getEntitiesOfClass(
                     ItemEntity.class, searchBox, e -> true)) {
 
-                ItemStack stack = itemEntity.getStack();
+                ItemStack stack = itemEntity.getItem();
                 if (stack.isEmpty()) continue;
 
-                float dist = (float) mc.player.getPos().distanceTo(itemEntity.getPos());
+                float dist = (float) mc.player.position().distanceTo(itemEntity.position());
                 if (dist > range) continue;
 
-                String itemName = stack.getName().getString();
+                String itemName = stack.getHoverName().getString();
 
                 countMap.computeIfAbsent(itemName, k -> new int[]{0})[0] += stack.getCount();
                 distMap.computeIfAbsent(itemName, k -> new float[]{Float.MAX_VALUE});
@@ -802,7 +802,7 @@ public class NeighbourhoodWatchHUD extends HudElement {
         TrackingMode tMode = entityTrackingMode.get();
 
         double eRange = entityRange.get();
-        Box expandedBox = playerBox(eRange);
+        AABB expandedBox = playerBox(eRange);
 
         boolean doEndCrystals    = tMode == TrackingMode.All || showEndCrystals.get();
         boolean doChestMinecarts = tMode == TrackingMode.All || showChestMinecarts.get();
@@ -813,12 +813,12 @@ public class NeighbourhoodWatchHUD extends HudElement {
         if (doEndCrystals || doChestMinecarts || doVehicles || doPassiveMobs || doHostileMobs) {
 
             if (doEndCrystals) {
-                var crystals = mc.world.getEntitiesByClass(
-                    EndCrystalEntity.class, expandedBox, e -> true);
+                var crystals = mc.level.getEntitiesOfClass(
+                    EndCrystal.class, expandedBox, e -> true);
                 if (!crystals.isEmpty()) {
                     float nearest = Float.MAX_VALUE;
-                    for (EndCrystalEntity e : crystals) {
-                        float d = (float) mc.player.getPos().distanceTo(e.getPos());
+                    for (EndCrystal e : crystals) {
+                        float d = (float) mc.player.position().distanceTo(e.position());
                         if (d < nearest) nearest = d;
                     }
                     List<TrackedEntry> entries = List.of(
@@ -832,12 +832,12 @@ public class NeighbourhoodWatchHUD extends HudElement {
             }
 
             if (doChestMinecarts) {
-                var carts = mc.world.getEntitiesByClass(
-                    ChestMinecartEntity.class, expandedBox, e -> true);
+                var carts = mc.level.getEntitiesOfClass(
+                    MinecartChest.class, expandedBox, e -> true);
                 if (!carts.isEmpty()) {
                     float nearest = Float.MAX_VALUE;
-                    for (ChestMinecartEntity e : carts) {
-                        float d = (float) mc.player.getPos().distanceTo(e.getPos());
+                    for (MinecartChest e : carts) {
+                        float d = (float) mc.player.position().distanceTo(e.position());
                         if (d < nearest) nearest = d;
                     }
                     List<TrackedEntry> entries = List.of(
@@ -851,11 +851,11 @@ public class NeighbourhoodWatchHUD extends HudElement {
             }
 
             if (doVehicles) {
-                var vehicles = mc.world.getEntitiesByClass(
-                    net.minecraft.entity.Entity.class, expandedBox,
-                    e -> (e instanceof BoatEntity)
-                      || (e instanceof AbstractMinecartEntity
-                          && !(e instanceof ChestMinecartEntity))
+                var vehicles = mc.level.getEntitiesOfClass(
+                    net.minecraft.world.entity.Entity.class, expandedBox,
+                    e -> (e instanceof Boat)
+                      || (e instanceof AbstractMinecart
+                          && !(e instanceof MinecartChest))
                 );
 
                 if (!vehicles.isEmpty()) {
@@ -863,8 +863,8 @@ public class NeighbourhoodWatchHUD extends HudElement {
                     Map<String, float[]> vDistMap  = new LinkedHashMap<>();
 
                     for (var e : vehicles) {
-                        String typeName = e.getType().getName().getString();
-                        float  dist     = (float) mc.player.getPos().distanceTo(e.getPos());
+                        String typeName = e.getType().getDescription().getString();
+                        float  dist     = (float) mc.player.position().distanceTo(e.position());
                         vCountMap.computeIfAbsent(typeName, k -> new int[]{0})[0]++;
                         vDistMap.computeIfAbsent(typeName, k -> new float[]{Float.MAX_VALUE});
                         if (dist < vDistMap.get(typeName)[0]) vDistMap.get(typeName)[0] = dist;
@@ -890,8 +890,8 @@ public class NeighbourhoodWatchHUD extends HudElement {
             }
 
             if (doPassiveMobs) {
-                var passives = mc.world.getEntitiesByClass(
-                    MobEntity.class, expandedBox, e -> e instanceof PassiveEntity);
+                var passives = mc.level.getEntitiesOfClass(
+                    Mob.class, expandedBox, e -> e instanceof AgeableMob);
                 SettingColor col = tMode == TrackingMode.All
                     ? allEntitiesColor.get() : passiveMobColor.get();
                 TrackedCategory cat = buildMobCategory(passives, "Passive", col);
@@ -899,9 +899,9 @@ public class NeighbourhoodWatchHUD extends HudElement {
             }
 
             if (doHostileMobs) {
-                var hostiles = mc.world.getEntitiesByClass(
-                    MobEntity.class, expandedBox,
-                    e -> (e instanceof HostileEntity) || (e instanceof WitherEntity));
+                var hostiles = mc.level.getEntitiesOfClass(
+                    Mob.class, expandedBox,
+                    e -> (e instanceof Monster) || (e instanceof WitherBoss));
                 SettingColor col = tMode == TrackingMode.All
                     ? allEntitiesColor.get() : hostileMobColor.get();
                 TrackedCategory cat = buildMobCategory(hostiles, "Hostile", col);
@@ -1451,16 +1451,16 @@ public class NeighbourhoodWatchHUD extends HudElement {
         };
     }
 
-    private TrackedCategory buildMobCategory(List<? extends MobEntity> mobs, String label, SettingColor col) {
+    private TrackedCategory buildMobCategory(List<? extends Mob> mobs, String label, SettingColor col) {
         if (mobs.isEmpty()) return null;
 
         Map<String, int[]>   countMap = new LinkedHashMap<>();
         Map<String, float[]> distMap  = new LinkedHashMap<>();
         int total = 0;
 
-        for (MobEntity e : mobs) {
-            String typeName = e.getType().getName().getString();
-            float dist = (float) mc.player.getPos().distanceTo(e.getPos());
+        for (Mob e : mobs) {
+            String typeName = e.getType().getDescription().getString();
+            float dist = (float) mc.player.position().distanceTo(e.position());
             countMap.computeIfAbsent(typeName, k -> new int[]{0})[0]++;
             distMap.computeIfAbsent(typeName, k -> new float[]{Float.MAX_VALUE});
             if (dist < distMap.get(typeName)[0]) distMap.get(typeName)[0] = dist;

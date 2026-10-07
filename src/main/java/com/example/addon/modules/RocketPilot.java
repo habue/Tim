@@ -21,21 +21,21 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
-import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
-import net.minecraft.stat.Stats;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
+import net.minecraft.stats.Stats;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class RocketPilot extends Module {
 
@@ -97,12 +97,12 @@ public class RocketPilot extends Module {
         .description("The primary flight mode for pitch control.")
         .defaultValue(FlightMode.Normal)
         .onChanged(v -> {
-            if (!isActive() || mc.world == null) return;
+            if (!isActive() || mc.level == null) return;
             resetPatternState();
             
             if (v != FlightMode.Ebounce) {
-                mc.options.forwardKey.setPressed(false);
-                mc.options.jumpKey.setPressed(false);
+                mc.options.keyUp.setDown(false);
+                mc.options.keyJump.setDown(false);
                 if (ebouncePass) {
                     BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().cancelEverything();
                     ebouncePass = false;
@@ -170,7 +170,7 @@ public class RocketPilot extends Module {
         .description("Key to toggle the freelook Y feature.")
         .defaultValue(Keybind.none())
         .action(() -> {
-            if (mc.currentScreen != null) return;
+            if (mc.screen != null) return;
             boolean newVal = !useFreeLookY.get();
             useFreeLookY.set(newVal);
             info("Freelook Y " + (newVal ? "enabled" : "disabled") + ".");
@@ -773,8 +773,8 @@ public class RocketPilot extends Module {
 
     // Pattern flight state
     private boolean paused              = false;
-    private Vec3d   origin              = null;
-    private Vec3d   currentTarget       = null;
+    private Vec3   origin              = null;
+    private Vec3   currentTarget       = null;
     private int     gridStep            = 1;
     private int     gridStepsInLeg      = 0;
     private int     gridDirection       = 0;
@@ -790,8 +790,8 @@ public class RocketPilot extends Module {
     private int     polygonRotation     = 0;
 
     // Drunk Spiral state
-    private Vec3d  drunkSpiralOrigin    = null;
-    private Vec3d  drunkSpiralTarget    = null;
+    private Vec3  drunkSpiralOrigin    = null;
+    private Vec3  drunkSpiralTarget    = null;
     private int    drunkGridStep        = 1;
     private int    drunkGridStepsInLeg  = 0;
     private int    drunkGridDirection   = 0;
@@ -813,14 +813,14 @@ public class RocketPilot extends Module {
     }
 
     private void togglePause() {
-        if (mc.currentScreen != null) return;
+        if (mc.screen != null) return;
         if (!isPatternMode()) return;
         paused = !paused;
         info("Pattern flight %s.", paused ? "paused" : "resumed");
     }
 
     private void panicDisconnect() {
-        if (mc.currentScreen != null) return;
+        if (mc.screen != null) return;
         if (mc.player == null) return;
         info("Panic disconnect triggered!");
         disconnect("[RocketPilot] Panic disconnect.");
@@ -876,35 +876,35 @@ public class RocketPilot extends Module {
         ebounceSlow = 0; ebounceWarm = 0; ebounceJump = 0;
         ebouncePass = false; ebounceStarted = false;
 
-        if (mc.player == null || mc.world == null) { toggle(); return; }
+        if (mc.player == null || mc.level == null) { toggle(); return; }
 
         if (flightMode.get() == FlightMode.Ebounce) {
             ebounceFace();
             ebounceCenter();
             // If already gliding, we've technically "started"
-            ebounceStarted = mc.player.isGliding();
+            ebounceStarted = mc.player.isFallFlying();
             return; // Skip standard rocket takeoff logic
         }
 
         // Reset standard pattern state if player has moved too far from the origin since last time
-        if (origin != null && mc.player.getPos().distanceTo(origin) > 100) {
+        if (origin != null && mc.player.position().distanceTo(origin) > 100) {
             resetPatternState();
         }
 
         // Reset drunk spiral state if player has moved too far from the origin since last time
-        if (drunkSpiralOrigin != null && mc.player.getPos().distanceTo(drunkSpiralOrigin) > 100) {
+        if (drunkSpiralOrigin != null && mc.player.position().distanceTo(drunkSpiralOrigin) > 100) {
             resetDrunkSpiralState();
         }
 
-        totemPops      = mc.player.getStatHandler().getStat(Stats.USED, Items.TOTEM_OF_UNDYING);
-        targetPitch    = mc.player.getPitch();
-        targetDrunkYaw = mc.player.getYaw();
+        totemPops      = mc.player.getStats().getValue(Stats.ITEM_USED, Items.TOTEM_OF_UNDYING);
+        targetPitch    = mc.player.getXRot();
+        targetDrunkYaw = mc.player.getYRot();
 
-        if (mc.player.isGliding()) return;
+        if (mc.player.isFallFlying()) return;
         if (!autoTakeoff.get())    return;
 
-        ItemStack elytra = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (elytra.isEmpty() || !elytra.isOf(Items.ELYTRA)) {
+        ItemStack elytra = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (elytra.isEmpty() || !elytra.is(Items.ELYTRA)) {
             error("No elytra equipped.");
             toggle();
             return;
@@ -920,8 +920,8 @@ public class RocketPilot extends Module {
         }
 
         targetPitch = -28.0f;
-        mc.player.setPitch(targetPitch);
-        mc.player.jump();
+        mc.player.setXRot(targetPitch);
+        mc.player.jumpFromGround();
         needsTakeoffRocket = true;
         info("Taking off!");
     }
@@ -934,8 +934,8 @@ public class RocketPilot extends Module {
         drunkVisitedChunks.clear(); // Free memory
 
         // Clear Ebounce inputs
-        mc.options.forwardKey.setPressed(false);
-        mc.options.jumpKey.setPressed(false);
+        mc.options.keyUp.setDown(false);
+        mc.options.keyJump.setDown(false);
         if (ebouncePass) {
             BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().cancelEverything();
         }
@@ -947,10 +947,10 @@ public class RocketPilot extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (System.currentTimeMillis() - lastLagbackTime < 500) return;
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         if (disconnectOnTotemPop.get()) {
-            int currentPops = mc.player.getStatHandler().getStat(Stats.USED, Items.TOTEM_OF_UNDYING);
+            int currentPops = mc.player.getStats().getValue(Stats.ITEM_USED, Items.TOTEM_OF_UNDYING);
             if (currentPops > totemPops) {
                 error("Totem popped! Disconnecting...");
                 disconnect("[RocketPilot] Disconnected on totem pop.");
@@ -959,8 +959,8 @@ public class RocketPilot extends Module {
         }
 
         if (autoDisableOnLowHealth.get()) {
-            boolean hasTotem = mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)
-                            || mc.player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING);
+            boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
+                            || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
             if (hasTotem && mc.player.getHealth() <= lowHealthThreshold.get() * 2f) {
                 error("Health critical (%.1f hp), disabling.", mc.player.getHealth());
                 toggle();
@@ -968,8 +968,8 @@ public class RocketPilot extends Module {
             }
         }
 
-        ItemStack elytra = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (elytra.isEmpty() || !elytra.isOf(Items.ELYTRA)) {
+        ItemStack elytra = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (elytra.isEmpty() || !elytra.is(Items.ELYTRA)) {
             error("Elytra missing — disabling.");
             toggle();
             return;
@@ -991,7 +991,7 @@ public class RocketPilot extends Module {
 
         if (takeoffTimer > 0) takeoffTimer--;
 
-        if (disableOnLand.get() && mc.player.isOnGround() && !needsTakeoffRocket && takeoffTimer == 0) {
+        if (disableOnLand.get() && mc.player.onGround() && !needsTakeoffRocket && takeoffTimer == 0) {
             info("Landed — disabling.");
             toggle();
             return;
@@ -1002,10 +1002,10 @@ public class RocketPilot extends Module {
             wantsToFly = true;
         }
 
-        if (isNearGround() && !mc.player.isGliding() && wantsToFly && autoTakeoff.get() && countFireworks() > 0 && !needsTakeoffRocket) {
+        if (isNearGround() && !mc.player.isFallFlying() && wantsToFly && autoTakeoff.get() && countFireworks() > 0 && !needsTakeoffRocket) {
             targetPitch = -28.0f;
-            mc.player.setPitch(targetPitch);
-            if (mc.player.isOnGround()) mc.player.jump();
+            mc.player.setXRot(targetPitch);
+            if (mc.player.onGround()) mc.player.jumpFromGround();
             needsTakeoffRocket = true;
             takeoffWaitTicks   = 0;
             info("Re-launching!");
@@ -1016,7 +1016,7 @@ public class RocketPilot extends Module {
             return;
         }
 
-        if (!mc.player.isGliding()) return;
+        if (!mc.player.isFallFlying()) return;
 
         handleElytraHealth();
 
@@ -1049,7 +1049,7 @@ public class RocketPilot extends Module {
                         it.remove();
                     }
                 }
-                drunkVisitedChunks.add(mc.player.getChunkPos().toLong());
+                drunkVisitedChunks.add(mc.player.chunkPosition().pack());
                 handleDrunkMode();
             } else if (currentPattern != FlightPattern.Manual) {
                 handlePatternYaw();
@@ -1061,23 +1061,23 @@ public class RocketPilot extends Module {
 
     @EventHandler
     private void onPacketReceive(meteordevelopment.meteorclient.events.packets.PacketEvent.Receive event) {
-        if (event.packet instanceof PlayerPositionLookS2CPacket) {
+        if (event.packet instanceof ClientboundPlayerPositionPacket) {
             lastLagbackTime = System.currentTimeMillis();
-            mc.options.forwardKey.setPressed(false);
+            mc.options.keyUp.setDown(false);
         }
     }
 
     // ─── Ebounce Mode Logic ──────────────────────────────────────────────────────
     private void handleEbounceTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         handleElytraHealth();
 
         IBaritone baritone = ebounceObstacle.get() ? BaritoneAPI.getProvider().getPrimaryBaritone() : null;
 
         if (ebounceObstacle.get()) {
             if (ebouncePass && (baritone.getCustomGoalProcess().isActive() || baritone.getPathingBehavior().isPathing())) {
-                mc.options.forwardKey.setPressed(false);
-                mc.options.jumpKey.setPressed(false);
+                mc.options.keyUp.setDown(false);
+                mc.options.keyJump.setDown(false);
                 mc.player.setSprinting(false);
                 ebounceSlow = 0; ebounceWarm = 0; ebounceJump = 0;
                 return;
@@ -1092,65 +1092,65 @@ public class RocketPilot extends Module {
             ebouncePass = false;
         }
 
-        ItemStack elytra = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (elytra.isEmpty() || !elytra.isOf(Items.ELYTRA)) {
+        ItemStack elytra = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (elytra.isEmpty() || !elytra.is(Items.ELYTRA)) {
             error("Elytra missing — disabling.");
             toggle();
             return;
         }
 
-        if (!mc.player.isGliding() && !ebounceStarted) {
+        if (!mc.player.isFallFlying() && !ebounceStarted) {
             ebounceSlow = 0; ebounceWarm = 0;
             mc.player.setSprinting(false);
 
-            if (mc.player.isOnGround()) {
+            if (mc.player.onGround()) {
                 ebounceJump = 0;
-                mc.options.forwardKey.setPressed(true);
-                mc.options.jumpKey.setPressed(true);
-                mc.player.jump();
+                mc.options.keyUp.setDown(true);
+                mc.options.keyJump.setDown(true);
+                mc.player.jumpFromGround();
                 return;
             }
 
             ebounceJump++;
-            if (ebounceJump < EBOUNCE_LAUNCH || mc.player.getVelocity().y >= 0.0) {
+            if (ebounceJump < EBOUNCE_LAUNCH || mc.player.getDeltaMovement().y >= 0.0) {
                 return;
             }
 
-            mc.player.startGliding();
-            if (mc.player.networkHandler != null) {
-                mc.player.networkHandler.sendPacket(new ClientCommandC2SPacket(mc.player, ClientCommandC2SPacket.Mode.START_FALL_FLYING));
+            mc.player.startFallFlying();
+            if (mc.player.connection != null) {
+                mc.player.connection.send(new ServerboundPlayerCommandPacket(mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
             }
             mc.player.setSprinting(true);
             ebounceJump = 0;
             ebounceStarted = true;
         } else {
             mc.player.setSprinting(true);
-            if (!mc.player.isGliding() && !mc.player.isOnGround()) {
-                mc.player.startGliding();
-                if (mc.player.networkHandler != null) {
-                    mc.player.networkHandler.sendPacket(new ClientCommandC2SPacket(mc.player, ClientCommandC2SPacket.Mode.START_FALL_FLYING));
+            if (!mc.player.isFallFlying() && !mc.player.onGround()) {
+                mc.player.startFallFlying();
+                if (mc.player.connection != null) {
+                    mc.player.connection.send(new ServerboundPlayerCommandPacket(mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING));
                 }
             }
 
-            if (!mc.player.isGliding()) {
+            if (!mc.player.isFallFlying()) {
                 ebounceStarted = false;
                 return;
             }
 
-            mc.player.setPitch(ebouncePitch.get().floatValue());
-            mc.options.forwardKey.setPressed(true);
-            mc.options.jumpKey.setPressed(true);
+            mc.player.setXRot(ebouncePitch.get().floatValue());
+            mc.options.keyUp.setDown(true);
+            mc.options.keyJump.setDown(true);
 
             ebounceWarm++;
             if (ebounceObstacle.get() && ebounceAvoid.get()) {
-                Vec3d hit = ebounceCollision();
+                Vec3 hit = ebounceCollision();
                 if (hit != null) {
                     ebouncePath(baritone, hit);
                     return;
                 }
             }
             if (ebounceObstacle.get() && ebounceWarm >= EBOUNCE_WARMUP) {
-                Vec3d vel = mc.player.getVelocity();
+                Vec3 vel = mc.player.getDeltaMovement();
                 double speed = Math.hypot(vel.x, vel.z);
                 if (speed < EBOUNCE_STOP) ebounceSlow++;
                 else ebounceSlow = 0;
@@ -1164,29 +1164,29 @@ public class RocketPilot extends Module {
         }
     }
 
-    private Vec3d ebounceCollision() {
-        Vec3d front = new Vec3d(ebounceDx, 0, ebounceDz).normalize();
-        Vec3d side = new Vec3d(-front.z, 0, front.x);
-        Vec3d vel = mc.player.getVelocity();
+    private Vec3 ebounceCollision() {
+        Vec3 front = new Vec3(ebounceDx, 0, ebounceDz).normalize();
+        Vec3 side = new Vec3(-front.z, 0, front.x);
+        Vec3 vel = mc.player.getDeltaMovement();
 
         double scan = Math.hypot(vel.x, vel.z) * ebounceTicks.get();
-        double width = mc.player.getWidth() / 2.0;
+        double width = mc.player.getBbWidth() / 2.0;
 
-        Vec3d closest = null;
+        Vec3 closest = null;
         double distance = Double.MAX_VALUE;
 
         for (int idx = -1; idx <= 1; idx += 2) {
             for (double y = 0.5; y <= 1.5; y++) {
-                Vec3d start = new Vec3d(mc.player.getX(), mc.player.getY() + y, mc.player.getZ());
-                start = start.add(side.multiply(width * idx));
-                Vec3d end = start.add(front.multiply(scan));
-                BlockHitResult hit = mc.world.raycast(new RaycastContext(start, end, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, mc.player));
+                Vec3 start = new Vec3(mc.player.getX(), mc.player.getY() + y, mc.player.getZ());
+                start = start.add(side.scale(width * idx));
+                Vec3 end = start.add(front.scale(scan));
+                BlockHitResult hit = mc.level.clip(new ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
 
                 if (hit.getType() != HitResult.Type.BLOCK) continue;
-                double current = start.squaredDistanceTo(hit.getPos());
+                double current = start.distanceToSqr(hit.getLocation());
                 if (current < distance) {
                     distance = current;
-                    closest = hit.getPos();
+                    closest = hit.getLocation();
                 }
             }
         }
@@ -1194,12 +1194,12 @@ public class RocketPilot extends Module {
     }
 
     private void ebouncePath(IBaritone baritone) {
-        ebouncePath(baritone, mc.player.getPos());
+        ebouncePath(baritone, mc.player.position());
     }
 
-    private void ebouncePath(IBaritone baritone, Vec3d point) {
-        mc.options.forwardKey.setPressed(false);
-        mc.options.jumpKey.setPressed(false);
+    private void ebouncePath(IBaritone baritone, Vec3 point) {
+        mc.options.keyUp.setDown(false);
+        mc.options.keyJump.setDown(false);
         ebounceSlow = 0; ebounceWarm = 0; ebounceJump = 0;
         ebouncePass = true; ebounceStarted = false;
         mc.player.setSprinting(false);
@@ -1207,8 +1207,8 @@ public class RocketPilot extends Module {
         baritone.getCustomGoalProcess().setGoalAndPath(goal);
     }
 
-    private BlockPos ebounceGoal(Vec3d point) {
-        Vec3d dir = new Vec3d(ebounceDx, 0, ebounceDz).normalize();
+    private BlockPos ebounceGoal(Vec3 point) {
+        Vec3 dir = new Vec3(ebounceDx, 0, ebounceDz).normalize();
         double ox = point.x - ebouncePx;
         double oz = point.z - ebouncePz;
         double along = ox * dir.x + oz * dir.z;
@@ -1218,8 +1218,8 @@ public class RocketPilot extends Module {
     }
 
     private void ebounceFace() {
-        float yaw = mc.player.getYaw();
-        int face = MathHelper.floor((yaw + 22.5F) / 45.0F) & 7;
+        float yaw = mc.player.getYRot();
+        int face = Mth.floor((yaw + 22.5F) / 45.0F) & 7;
         ebounceDx = dxs[face];
         ebounceDz = dzs[face];
     }
@@ -1242,9 +1242,9 @@ public class RocketPilot extends Module {
 
     private void ebounceRotate() {
         float yaw = (float) Math.toDegrees(Math.atan2(-ebounceDx, ebounceDz));
-        mc.player.setYaw(yaw);
-        mc.player.setHeadYaw(yaw);
-        mc.player.setBodyYaw(yaw);
+        mc.player.setYRot(yaw);
+        mc.player.setYHeadRot(yaw);
+        mc.player.setYBodyRot(yaw);
     }
 
     private int ebounceSnap(double value) {
@@ -1253,14 +1253,14 @@ public class RocketPilot extends Module {
 
     // ─── Takeoff ─────────────────────────────────────────────────────────────────
     private void handleTakeoff() {
-        if (mc.player.isOnGround()) {
-            mc.player.jump();
+        if (mc.player.onGround()) {
+            mc.player.jumpFromGround();
             return;
         }
-        if (!mc.player.isGliding()) {
-            if (mc.player.networkHandler != null) {
-                mc.player.networkHandler.sendPacket(
-                    new ClientCommandC2SPacket(mc.player, ClientCommandC2SPacket.Mode.START_FALL_FLYING)
+        if (!mc.player.isFallFlying()) {
+            if (mc.player.connection != null) {
+                mc.player.connection.send(
+                    new ServerboundPlayerCommandPacket(mc.player, ServerboundPlayerCommandPacket.Action.START_FALL_FLYING)
                 );
             }
             return;
@@ -1281,7 +1281,7 @@ public class RocketPilot extends Module {
 
     private boolean hotbarHasRocket() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.FIREWORK_ROCKET)) return true;
+            if (mc.player.getInventory().getItem(i).is(Items.FIREWORK_ROCKET)) return true;
         }
         return false;
     }
@@ -1300,21 +1300,21 @@ public class RocketPilot extends Module {
 
     // ─── Collision Avoidance ──────────────────────────────────────────────────────
     private Float handleCollisionAvoidance() {
-        if (!mc.player.isGliding() || mc.player.getPitch() >= 30) return null;
+        if (!mc.player.isFallFlying() || mc.player.getXRot() >= 30) return null;
 
-        Vec3d camPos   = mc.player.getCameraPosVec(1.0f);
-        Vec3d velocity = mc.player.getVelocity();
-        if (velocity.lengthSquared() < 0.01) return null;
+        Vec3 camPos   = mc.player.getEyePosition(1.0f);
+        Vec3 velocity = mc.player.getDeltaMovement();
+        if (velocity.lengthSqr() < 0.01) return null;
 
-        Vec3d fwd    = velocity.normalize();
-        Vec3d[] rays = { fwd, fwd.rotateY(0.5f), fwd.rotateY(-0.5f) };
+        Vec3 fwd    = velocity.normalize();
+        Vec3[] rays = { fwd, fwd.yRot(0.5f), fwd.yRot(-0.5f) };
 
         boolean obstacleDetected = false;
-        for (Vec3d dir : rays) {
-            BlockHitResult hit = mc.world.raycast(new RaycastContext(
-                camPos, camPos.add(dir.multiply(avoidanceDistance.get())),
-                RaycastContext.ShapeType.COLLIDER,
-                RaycastContext.FluidHandling.NONE,
+        for (Vec3 dir : rays) {
+            BlockHitResult hit = mc.level.clip(new ClipContext(
+                camPos, camPos.add(dir.scale(avoidanceDistance.get())),
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
                 mc.player
             ));
             if (hit.getType() == HitResult.Type.BLOCK) { obstacleDetected = true; break; }
@@ -1325,44 +1325,44 @@ public class RocketPilot extends Module {
             currentTarget = null;
         }
 
-        Vec3d leftDir  = fwd.rotateY(1.5f);
-        Vec3d rightDir = fwd.rotateY(-1.5f);
+        Vec3 leftDir  = fwd.yRot(1.5f);
+        Vec3 rightDir = fwd.yRot(-1.5f);
         double checkDist = avoidanceDistance.get() * 1.5;
 
-        boolean leftClear = mc.world.raycast(new RaycastContext(
-            camPos, camPos.add(leftDir.multiply(checkDist)),
-            RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, mc.player
+        boolean leftClear = mc.level.clip(new ClipContext(
+            camPos, camPos.add(leftDir.scale(checkDist)),
+            ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player
         )).getType() == HitResult.Type.MISS;
 
-        boolean rightClear = mc.world.raycast(new RaycastContext(
-            camPos, camPos.add(rightDir.multiply(checkDist)),
-            RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, mc.player
+        boolean rightClear = mc.level.clip(new ClipContext(
+            camPos, camPos.add(rightDir.scale(checkDist)),
+            ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player
         )).getType() == HitResult.Type.MISS;
 
         float yawSpeed = 5.0f;
         if (limitRotationSpeed.get()) yawSpeed = Math.min(yawSpeed, maxRotationPerTick.get().floatValue());
 
         if (leftClear && !rightClear) {
-            mc.player.setYaw(mc.player.getYaw() + yawSpeed);
+            mc.player.setYRot(mc.player.getYRot() + yawSpeed);
         } else if (rightClear && !leftClear) {
-            mc.player.setYaw(mc.player.getYaw() - yawSpeed);
+            mc.player.setYRot(mc.player.getYRot() - yawSpeed);
         } else if (leftClear) {
-            if (mc.player.age % 2 == 0) mc.player.setYaw(mc.player.getYaw() + yawSpeed);
-            else mc.player.setYaw(mc.player.getYaw() - yawSpeed);
+            if (mc.player.tickCount % 2 == 0) mc.player.setYRot(mc.player.getYRot() + yawSpeed);
+            else mc.player.setYRot(mc.player.getYRot() - yawSpeed);
         }
 
-        float currentPitch = mc.player.getPitch();
-        double speed       = mc.player.getVelocity().horizontalLength();
-        float pullUpStr    = (float) MathHelper.clamp(speed * 20, 20, 60);
+        float currentPitch = mc.player.getXRot();
+        double speed       = mc.player.getDeltaMovement().horizontalDistance();
+        float pullUpStr    = (float) Mth.clamp(speed * 20, 20, 60);
 
-        if (shouldFireRocket() && countFireworks() > 0 && mc.player.getVelocity().y < 0.2) {
+        if (shouldFireRocket() && countFireworks() > 0 && mc.player.getDeltaMovement().y < 0.2) {
             long now = System.currentTimeMillis();
             if (now - lastRocketTime >= COLLISION_ROCKET_COOLDOWN) {
                 fireRocket();
                 lastRocketTime = now;
             }
         }
-        return MathHelper.lerp(0.3f, currentPitch, -pullUpStr);
+        return Mth.lerp(0.3f, currentPitch, -pullUpStr);
     }
 
     // ─── Normal Mode ─────────────────────────────────────────────────────────────
@@ -1370,7 +1370,7 @@ public class RocketPilot extends Module {
         if (!useTargetY.get()) {
             long now = System.currentTimeMillis();
             if (now - lastRocketTime >= rocketDelay.get()
-                    && mc.player.getVelocity().y < 0.5
+                    && mc.player.getDeltaMovement().y < 0.5
                     && shouldFireRocket() && countFireworks() > 0) {
                 fireRocket();
                 lastRocketTime = now;
@@ -1389,7 +1389,7 @@ public class RocketPilot extends Module {
         if (ascentMode) {
             long now = System.currentTimeMillis();
             if (now - lastRocketTime >= rocketDelay.get()
-                    && mc.player.getVelocity().y < 0.5
+                    && mc.player.getDeltaMovement().y < 0.5
                     && shouldFireRocket() && countFireworks() > 0) {
                 fireRocket();
                 lastRocketTime = now;
@@ -1401,12 +1401,12 @@ public class RocketPilot extends Module {
             calculatedPitch = 0.0f;
         } else {
             calculatedPitch = (float) (-Math.tanh(diff / 10.0) * 60.0);
-            calculatedPitch = MathHelper.clamp(calculatedPitch, -60.0f, 45.0f);
+            calculatedPitch = Mth.clamp(calculatedPitch, -60.0f, 45.0f);
         }
 
         targetPitch = calculatedPitch;
         float smooth = pitchSmoothing.get().floatValue();
-        return mc.player.getPitch() + (targetPitch - mc.player.getPitch()) * smooth;
+        return mc.player.getXRot() + (targetPitch - mc.player.getXRot()) * smooth;
     }
 
     // ─── Pitch40 Mode ────────────────────────────────────────────────────────────
@@ -1429,8 +1429,8 @@ public class RocketPilot extends Module {
         }
 
         float pitch = pitch40Climbing
-            ? MathHelper.lerp(smooth, mc.player.getPitch(), -40f)
-            : MathHelper.lerp(smooth, mc.player.getPitch(),  40f);
+            ? Mth.lerp(smooth, mc.player.getXRot(), -40f)
+            : Mth.lerp(smooth, mc.player.getXRot(),  40f);
 
         if (pitch40Rocketing) {
             long now = System.currentTimeMillis();
@@ -1455,14 +1455,14 @@ public class RocketPilot extends Module {
         if (bounceClimbing) {
             long now = System.currentTimeMillis();
             if (now - lastRocketTime >= rocketDelay.get()
-                    && mc.player.getVelocity().y < 0.5
+                    && mc.player.getDeltaMovement().y < 0.5
                     && shouldFireRocket() && countFireworks() > 0) {
                 fireRocket();
                 lastRocketTime = now;
             }
-            return MathHelper.lerp(smooth, mc.player.getPitch(), bounceClimbPitch.get().floatValue());
+            return Mth.lerp(smooth, mc.player.getXRot(), bounceClimbPitch.get().floatValue());
         } else {
-            return MathHelper.lerp(smooth, mc.player.getPitch(), bounceGlidePitch.get().floatValue());
+            return Mth.lerp(smooth, mc.player.getXRot(), bounceGlidePitch.get().floatValue());
         }
     }
 
@@ -1471,7 +1471,7 @@ public class RocketPilot extends Module {
         if (paused) return;
 
         if (flightPattern.get() != FlightPattern.Manual && flightPattern.get() != FlightPattern.Drunk) {
-            if (origin == null) origin = mc.player.getPos();
+            if (origin == null) origin = mc.player.position();
 
             if (currentTarget == null) {
                 calculateNextTarget();
@@ -1492,15 +1492,15 @@ public class RocketPilot extends Module {
                 double dx = currentTarget.x - mc.player.getX();
                 double dz = currentTarget.z - mc.player.getZ();
                 float targetYaw  = (float) Math.toDegrees(Math.atan2(-dx, dz));
-                float currentYaw = mc.player.getYaw();
-                float diffYaw    = MathHelper.wrapDegrees(targetYaw - currentYaw);
+                float currentYaw = mc.player.getYRot();
+                float diffYaw    = Mth.wrapDegrees(targetYaw - currentYaw);
                 float yawChange  = diffYaw * patternTurnSpeed.get().floatValue();
                 if (limitRotationSpeed.get()) {
-                    yawChange = MathHelper.clamp(yawChange,
+                    yawChange = Mth.clamp(yawChange,
                         -maxRotationPerTick.get().floatValue(),
                          maxRotationPerTick.get().floatValue());
                 }
-                mc.player.setYaw(currentYaw + yawChange);
+                mc.player.setYRot(currentYaw + yawChange);
             }
         } else {
             currentTarget = null;
@@ -1508,7 +1508,7 @@ public class RocketPilot extends Module {
     }
 
     private void calculateNextTarget() {
-        if (origin == null) origin = mc.player.getPos();
+        if (origin == null) origin = mc.player.position();
 
         double targetYValue  = useTargetY.get() ? targetY.get() : mc.player.getY();
         double nextX, nextZ;
@@ -1521,7 +1521,7 @@ public class RocketPilot extends Module {
             if (currentTarget == null) {
                 gridDirection  = 3;
                 gridStepsInLeg = 0;
-                Vec3d offset = getGridDirectionOffset(gridDirection, spacing);
+                Vec3 offset = getGridDirectionOffset(gridDirection, spacing);
                 nextX = origin.x + offset.x;
                 nextZ = origin.z + offset.z;
                 gridStepsInLeg = 1;
@@ -1531,7 +1531,7 @@ public class RocketPilot extends Module {
                     gridStepsInLeg = 0;
                     if (gridDirection == 0 || gridDirection == 2) gridStep++;
                 }
-                Vec3d offset = getGridDirectionOffset(gridDirection, spacing);
+                Vec3 offset = getGridDirectionOffset(gridDirection, spacing);
                 nextX = currentTarget.x + offset.x;
                 nextZ = currentTarget.z + offset.z;
                 gridStepsInLeg++;
@@ -1539,7 +1539,7 @@ public class RocketPilot extends Module {
         } else if (currentPattern == FlightPattern.ZigZag) {
             double legLength = zigzagLegLength.get() * 16.0;
             if (currentTarget == null) {
-                zigzagCurrentYaw = mc.player.getYaw();
+                zigzagCurrentYaw = mc.player.getYRot();
                 zigzagTurnRight  = true;
                 zigzagFirstLeg   = true;
             }
@@ -1547,13 +1547,13 @@ public class RocketPilot extends Module {
                 zigzagFirstLeg = false;
             } else {
                 double turnAmount = zigzagAngle.get() * 2.0;
-                zigzagCurrentYaw = MathHelper.wrapDegrees(
+                zigzagCurrentYaw = Mth.wrapDegrees(
                     zigzagCurrentYaw + (float)(zigzagTurnRight ? turnAmount : -turnAmount)
                 );
                 zigzagTurnRight = !zigzagTurnRight;
             }
             double radYaw    = Math.toRadians(zigzagCurrentYaw);
-            Vec3d startPoint = (currentTarget != null) ? currentTarget : origin;
+            Vec3 startPoint = (currentTarget != null) ? currentTarget : origin;
             nextX = startPoint.x + (-Math.sin(radYaw) * legLength);
             nextZ = startPoint.z + ( Math.cos(radYaw) * legLength);
         } else if (currentPattern == FlightPattern.FigureEight) {
@@ -1593,7 +1593,7 @@ public class RocketPilot extends Module {
             double sideLen     = (baseSide * 16.0) + totalSteps * growPerSide;
 
             double heading = polygonSide * extAngle;
-            Vec3d start    = (currentTarget != null) ? currentTarget : origin;
+            Vec3 start    = (currentTarget != null) ? currentTarget : origin;
             nextX = start.x + Math.cos(heading) * sideLen;
             nextZ = start.z + Math.sin(heading) * sideLen;
 
@@ -1604,7 +1604,7 @@ public class RocketPilot extends Module {
             }
         } else if (currentPattern == FlightPattern.Sweep) {
             if (currentTarget == null) {
-                sweepInitialYaw = mc.player.getYaw();
+                sweepInitialYaw = mc.player.getYRot();
                 sweepStep = 0;
                 currentSweepFactor = 1.0;
             }
@@ -1617,16 +1617,16 @@ public class RocketPilot extends Module {
             double advance = sweepAdvance.get() * 16.0 * currentSweepFactor;
 
             float rad = (float) Math.toRadians(sweepInitialYaw);
-            Vec3d fwd  = new Vec3d(-Math.sin(rad), 0, Math.cos(rad));
-            Vec3d side = new Vec3d(-Math.cos(rad), 0, -Math.sin(rad));
-            Vec3d base = (currentTarget != null) ? currentTarget : origin;
+            Vec3 fwd  = new Vec3(-Math.sin(rad), 0, Math.cos(rad));
+            Vec3 side = new Vec3(-Math.cos(rad), 0, -Math.sin(rad));
+            Vec3 base = (currentTarget != null) ? currentTarget : origin;
 
-            Vec3d move;
+            Vec3 move;
             switch (sweepStep % 4) {
-                case 0:  move = side.multiply(sweepStep == 0 ? -width : -width * 2.0); break;
-                case 1:  move = fwd.multiply(advance); break;
-                case 2:  move = side.multiply(width * 2.0);  break;
-                default: move = fwd.multiply(advance); break;
+                case 0:  move = side.scale(sweepStep == 0 ? -width : -width * 2.0); break;
+                case 1:  move = fwd.scale(advance); break;
+                case 2:  move = side.scale(width * 2.0);  break;
+                default: move = fwd.scale(advance); break;
             }
 
             nextX = base.x + move.x;
@@ -1637,16 +1637,16 @@ public class RocketPilot extends Module {
             return;
         }
 
-        currentTarget = new Vec3d(nextX, targetYValue, nextZ);
+        currentTarget = new Vec3(nextX, targetYValue, nextZ);
     }
 
-    private Vec3d getGridDirectionOffset(int dir, int dist) {
+    private Vec3 getGridDirectionOffset(int dir, int dist) {
         return switch (dir) {
-            case 0 -> new Vec3d( dist, 0,    0);
-            case 1 -> new Vec3d(   0, 0, -dist);
-            case 2 -> new Vec3d(-dist, 0,    0);
-            case 3 -> new Vec3d(   0, 0,  dist);
-            default -> Vec3d.ZERO;
+            case 0 -> new Vec3( dist, 0,    0);
+            case 1 -> new Vec3(   0, 0, -dist);
+            case 2 -> new Vec3(-dist, 0,    0);
+            case 3 -> new Vec3(   0, 0,  dist);
+            default -> Vec3.ZERO;
         };
     }
 
@@ -1664,17 +1664,17 @@ public class RocketPilot extends Module {
 
             if (bias == DrunkBias.None) {
                 if (drunkAvoidVisited.get()) {
-                    float bestCandidate = mc.player.getYaw();
+                    float bestCandidate = mc.player.getYRot();
 
                     for (int i = 0; i < 10; i++) {
-                        float candidate = mc.player.getYaw() + (float)((Math.random() - 0.5) * 2.0 * intensity);
+                        float candidate = mc.player.getYRot() + (float)((Math.random() - 0.5) * 2.0 * intensity);
                         double rad = Math.toRadians(candidate);
                         boolean pathVisited = false;
 
                         for (int dist : new int[]{16, 32, 48}) {
                             int cx = (int) Math.floor((mc.player.getX() - Math.sin(rad) * dist) / 16.0);
                             int cz = (int) Math.floor((mc.player.getZ() + Math.cos(rad) * dist) / 16.0);
-                            if (drunkVisitedChunks.contains(ChunkPos.toLong(cx, cz))) {
+                            if (drunkVisitedChunks.contains(ChunkPos.pack(cx, cz))) {
                                 pathVisited = true;
                                 break;
                             }
@@ -1687,7 +1687,7 @@ public class RocketPilot extends Module {
                     }
                     targetDrunkYaw = bestCandidate;
                 } else {
-                    targetDrunkYaw = mc.player.getYaw() + (float)((Math.random() - 0.5) * 2.0 * intensity);
+                    targetDrunkYaw = mc.player.getYRot() + (float)((Math.random() - 0.5) * 2.0 * intensity);
                 }
             } else {
                 float minYaw, maxYaw;
@@ -1715,21 +1715,21 @@ public class RocketPilot extends Module {
             currentDrunkDuration = drunkInterval.get() + (int)(Math.random() * 10);
         }
 
-        float currentYaw = mc.player.getYaw();
-        float diffYaw    = MathHelper.wrapDegrees(targetDrunkYaw - currentYaw);
+        float currentYaw = mc.player.getYRot();
+        float diffYaw    = Mth.wrapDegrees(targetDrunkYaw - currentYaw);
         float change     = diffYaw * drunkSmoothing.get().floatValue();
 
         if (limitRotationSpeed.get()) {
             float max = maxRotationPerTick.get().floatValue();
-            change = MathHelper.clamp(change, -max, max);
+            change = Mth.clamp(change, -max, max);
         }
-        mc.player.setYaw(currentYaw + change);
+        mc.player.setYRot(currentYaw + change);
     }
 
     // ─── Drunk Spiral Mode ───────────────────────────────────────────────────────
     private void handleDrunkSpiralMode() {
         if (mc.player == null) return;
-        if (drunkSpiralOrigin == null) drunkSpiralOrigin = mc.player.getPos();
+        if (drunkSpiralOrigin == null) drunkSpiralOrigin = mc.player.position();
 
         if (drunkSpiralTarget == null) {
             calculateDrunkSpiralTarget();
@@ -1746,25 +1746,25 @@ public class RocketPilot extends Module {
             double dz = drunkSpiralTarget.z - mc.player.getZ();
             float baseYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
             float noise   = (float)((Math.random() - 0.5) * 2.0 * drunkSpiralNoise.get());
-            targetDrunkYaw = MathHelper.wrapDegrees(baseYaw + noise);
+            targetDrunkYaw = Mth.wrapDegrees(baseYaw + noise);
 
             drunkTimer           = 0;
             currentDrunkDuration = drunkInterval.get() + (int)(Math.random() * 10);
         }
 
-        float currentYaw = mc.player.getYaw();
-        float diffYaw    = MathHelper.wrapDegrees(targetDrunkYaw - currentYaw);
+        float currentYaw = mc.player.getYRot();
+        float diffYaw    = Mth.wrapDegrees(targetDrunkYaw - currentYaw);
         float change     = diffYaw * drunkSmoothing.get().floatValue();
 
         if (limitRotationSpeed.get()) {
             float max = maxRotationPerTick.get().floatValue();
-            change = MathHelper.clamp(change, -max, max);
+            change = Mth.clamp(change, -max, max);
         }
-        mc.player.setYaw(currentYaw + change);
+        mc.player.setYRot(currentYaw + change);
     }
 
     private void calculateDrunkSpiralTarget() {
-        if (drunkSpiralOrigin == null) drunkSpiralOrigin = mc.player.getPos();
+        if (drunkSpiralOrigin == null) drunkSpiralOrigin = mc.player.position();
 
         double targetYValue = useTargetY.get() ? targetY.get() : mc.player.getY();
         double nextX, nextZ;
@@ -1774,7 +1774,7 @@ public class RocketPilot extends Module {
             if (drunkSpiralTarget == null) {
                 drunkGridDirection  = 3;
                 drunkGridStepsInLeg = 0;
-                Vec3d off = getGridDirectionOffset(drunkGridDirection, spacing);
+                Vec3 off = getGridDirectionOffset(drunkGridDirection, spacing);
                 nextX = drunkSpiralOrigin.x + off.x;
                 nextZ = drunkSpiralOrigin.z + off.z;
                 drunkGridStepsInLeg = 1;
@@ -1784,7 +1784,7 @@ public class RocketPilot extends Module {
                     drunkGridStepsInLeg = 0;
                     if (drunkGridDirection == 0 || drunkGridDirection == 2) drunkGridStep++;
                 }
-                Vec3d off = getGridDirectionOffset(drunkGridDirection, spacing);
+                Vec3 off = getGridDirectionOffset(drunkGridDirection, spacing);
                 nextX = drunkSpiralTarget.x + off.x;
                 nextZ = drunkSpiralTarget.z + off.z;
                 drunkGridStepsInLeg++;
@@ -1802,7 +1802,7 @@ public class RocketPilot extends Module {
             double sideLen     = (baseSide * 16.0) + totalSteps * growPerSide;
 
             double heading = drunkPolygonSide * extAngle;
-            Vec3d start    = (drunkSpiralTarget != null) ? drunkSpiralTarget : drunkSpiralOrigin;
+            Vec3 start    = (drunkSpiralTarget != null) ? drunkSpiralTarget : drunkSpiralOrigin;
             nextX = start.x + Math.cos(heading) * sideLen;
             nextZ = start.z + Math.sin(heading) * sideLen;
 
@@ -1821,53 +1821,53 @@ public class RocketPilot extends Module {
             drunkCircleAngle += angleStep;
         }
 
-        drunkSpiralTarget = new Vec3d(nextX, targetYValue, nextZ);
+        drunkSpiralTarget = new Vec3(nextX, targetYValue, nextZ);
     }
 
     // ─── Apply Pitch ─────────────────────────────────────────────────────────────
     private void applyPitch(Float desiredPitch) {
         if (desiredPitch == null) return;
-        float current = mc.player.getPitch();
+        float current = mc.player.getXRot();
         if (limitRotationSpeed.get()) {
             float max  = maxRotationPerTick.get().floatValue();
-            float diff = MathHelper.clamp(desiredPitch - current, -max, max);
-            mc.player.setPitch(current + diff);
+            float diff = Mth.clamp(desiredPitch - current, -max, max);
+            mc.player.setXRot(current + diff);
         } else {
-            mc.player.setPitch(desiredPitch);
+            mc.player.setXRot(desiredPitch);
         }
     }
 
     // ─── Public Accessors ────────────────────────────────────────────────────────
     public boolean shouldFireRocket() {
         if (mc.player == null) return false;
-        ItemStack elytra = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (elytra.isEmpty() || !elytra.isOf(Items.ELYTRA)) return false;
-        if (Math.abs(mc.player.getPitch()) > 70) return false;
-        if (!needsTakeoffRocket && mc.player.getVelocity().horizontalLength() < 0.3) return false;
-        return elytra.getDamage() < elytra.getMaxDamage() - 1;
+        ItemStack elytra = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (elytra.isEmpty() || !elytra.is(Items.ELYTRA)) return false;
+        if (Math.abs(mc.player.getXRot()) > 70) return false;
+        if (!needsTakeoffRocket && mc.player.getDeltaMovement().horizontalDistance() < 0.3) return false;
+        return elytra.getDamageValue() < elytra.getMaxDamage() - 1;
     }
 
     public double getDurabilityPercent() {
         if (mc.player == null) return 100.0;
-        ItemStack elytra = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        if (elytra.isEmpty() || !elytra.isOf(Items.ELYTRA)) return 100.0;
-        return 100.0 * (elytra.getMaxDamage() - elytra.getDamage()) / (double) elytra.getMaxDamage();
+        ItemStack elytra = mc.player.getItemBySlot(EquipmentSlot.CHEST);
+        if (elytra.isEmpty() || !elytra.is(Items.ELYTRA)) return 100.0;
+        return 100.0 * (elytra.getMaxDamage() - elytra.getDamageValue()) / (double) elytra.getMaxDamage();
     }
 
     // ─── Private Helpers ─────────────────────────────────────────────────────────
     private void replenishRockets() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.FIREWORK_ROCKET)) return;
+            if (mc.player.getInventory().getItem(i).is(Items.FIREWORK_ROCKET)) return;
         }
         int invSlot = -1;
         for (int i = 9; i < 36; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.FIREWORK_ROCKET)) { invSlot = i; break; }
+            if (mc.player.getInventory().getItem(i).is(Items.FIREWORK_ROCKET)) { invSlot = i; break; }
         }
         if (invSlot == -1) return;
 
         int hotbarSlot = -1;
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isEmpty()) { hotbarSlot = i; break; }
+            if (mc.player.getInventory().getItem(i).isEmpty()) { hotbarSlot = i; break; }
         }
         if (hotbarSlot == -1) return;
         InvUtils.move().from(invSlot).toHotbar(hotbarSlot);
@@ -1877,20 +1877,20 @@ public class RocketPilot extends Module {
         if (mc.player == null) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
-            ItemStack s = mc.player.getInventory().getStack(i);
-            if (s.isOf(Items.FIREWORK_ROCKET)) count += s.getCount();
+            ItemStack s = mc.player.getInventory().getItem(i);
+            if (s.is(Items.FIREWORK_ROCKET)) count += s.getCount();
         }
-        ItemStack offhand = mc.player.getOffHandStack();
-        if (offhand.isOf(Items.FIREWORK_ROCKET)) count += offhand.getCount();
+        ItemStack offhand = mc.player.getOffhandItem();
+        if (offhand.is(Items.FIREWORK_ROCKET)) count += offhand.getCount();
         return count;
     }
 
     private Integer swapToFreshElytra() {
         int bestSlot = -1, bestDurability = -1;
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
-            if (stack.isOf(Items.ELYTRA)) {
-                int dur = stack.getMaxDamage() - stack.getDamage();
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (stack.is(Items.ELYTRA)) {
+                int dur = stack.getMaxDamage() - stack.getDamageValue();
                 if (dur > bestDurability && dur > ELYTRA_MIN_SWAP_DUR) {
                     bestSlot = i; bestDurability = dur;
                 }
@@ -1902,41 +1902,41 @@ public class RocketPilot extends Module {
     }
 
     private boolean isNearGround() {
-        if (mc.player == null || mc.world == null) return false;
-        if (mc.player.isOnGround()) return true;
-        BlockPos.Mutable pos = new BlockPos.Mutable();
+        if (mc.player == null || mc.level == null) return false;
+        if (mc.player.onGround()) return true;
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int i = 1; i <= 3; i++) {
             pos.set(mc.player.getX(), mc.player.getY() - i, mc.player.getZ());
-            if (mc.world.getBlockState(pos).isSolidBlock(mc.world, pos)) return true;
+            if (mc.level.getBlockState(pos).isRedstoneConductor(mc.level, pos)) return true;
         }
         return false;
     }
 
     private void fireRocket() {
-        if (mc.player == null || mc.interactionManager == null) return;
+        if (mc.player == null || mc.gameMode == null) return;
 
         int rocketSlot = -1;
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.FIREWORK_ROCKET)) { rocketSlot = i; break; }
+            if (mc.player.getInventory().getItem(i).is(Items.FIREWORK_ROCKET)) { rocketSlot = i; break; }
         }
 
         if (rocketSlot == -1) {
-            if (mc.player.getOffHandStack().isOf(Items.FIREWORK_ROCKET)) {
-                mc.interactionManager.interactItem(mc.player, Hand.OFF_HAND);
-                if (!silentRockets.get()) mc.player.swingHand(Hand.OFF_HAND);
+            if (mc.player.getOffhandItem().is(Items.FIREWORK_ROCKET)) {
+                mc.gameMode.useItem(mc.player, InteractionHand.OFF_HAND);
+                if (!silentRockets.get()) mc.player.swing(InteractionHand.OFF_HAND);
             }
             return;
         }
 
         InvUtils.swap(rocketSlot, true);
-        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-        if (!silentRockets.get()) mc.player.swingHand(Hand.MAIN_HAND);
+        mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+        if (!silentRockets.get()) mc.player.swing(InteractionHand.MAIN_HAND);
         InvUtils.swapBack();
     }
 
     private void disconnect(String reason) {
-        if (mc.player != null && mc.player.networkHandler != null) {
-            mc.player.networkHandler.getConnection().disconnect(Text.literal(reason));
+        if (mc.player != null && mc.player.connection != null) {
+            mc.player.connection.getConnection().disconnect(Component.literal(reason));
         }
         toggle();
     }

@@ -12,9 +12,8 @@ import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.meteorclient.utils.world.TickRate;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.PlayerListEntry;
-
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,7 +26,7 @@ public class StatisticsInformation extends HudElement {
         StatisticsInformation::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -403,7 +402,7 @@ public class StatisticsInformation extends HudElement {
         List<Segment> segs = new ArrayList<>();
         if (showFps.get()) {
             segs.add(new Segment("FPS: ", labelColor.get()));
-            segs.add(new Segment(String.valueOf(mc.getCurrentFps()), valueColor.get()));
+            segs.add(new Segment(String.valueOf(mc.getFps()), valueColor.get()));
         }
         
         if (showTps.get()) {
@@ -416,8 +415,8 @@ public class StatisticsInformation extends HudElement {
             segs.add(new Segment(String.format("%.1f", tps), tpsColor));
         }
 
-        if (showPing.get() && mc.player != null && mc.getNetworkHandler() != null) {
-            PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
+        if (showPing.get() && mc.player != null && mc.getConnection() != null) {
+            PlayerInfo entry = mc.getConnection().getPlayerInfo(mc.player.getUUID());
             if (entry != null) {
                 if (!segs.isEmpty()) segs.add(new Segment(" | ", separatorColor.get()));
                 segs.add(new Segment("Ping: ", labelColor.get()));
@@ -429,7 +428,7 @@ public class StatisticsInformation extends HudElement {
 
     private void addDirectionLine(List<Line> lines) {
         if (!showDirection.get() || mc.player == null) return;
-        float yaw = mc.player.getYaw() % 360f;
+        float yaw = mc.player.getYRot() % 360f;
         if (yaw < 0) yaw += 360f;
         String cardinal = getCardinal(yaw);
         String value = switch (directionFormat.get()) {
@@ -472,14 +471,14 @@ public class StatisticsInformation extends HudElement {
 
     private void addWorldLine(List<Line> lines, double sepW) {
         List<Segment> segs = new ArrayList<>();
-        if (showChunks.get() && mc.worldRenderer != null) {
+        if (showChunks.get() && mc.levelRenderer != null) {
             segs.add(new Segment("Chunks: ", labelColor.get()));
-            segs.add(new Segment(String.valueOf(mc.worldRenderer.getCompletedChunkCount()), valueColor.get()));
+            segs.add(new Segment(String.valueOf(mc.levelRenderer.countRenderedSections()), valueColor.get()));
         }
-        if (showPlayerCount.get() && mc.getNetworkHandler() != null) {
+        if (showPlayerCount.get() && mc.getConnection() != null) {
             if (!segs.isEmpty()) segs.add(new Segment(" | ", separatorColor.get()));
             segs.add(new Segment("Players: ", labelColor.get()));
-            segs.add(new Segment(String.valueOf(mc.getNetworkHandler().getPlayerList().size()), valueColor.get()));
+            segs.add(new Segment(String.valueOf(mc.getConnection().getOnlinePlayers().size()), valueColor.get()));
         }
         if (!segs.isEmpty()) lines.add(new Line(segs));
     }
@@ -549,8 +548,8 @@ public class StatisticsInformation extends HudElement {
 
     private double getSpeedBps() {
         if (mc.player == null) return 0.0;
-        double dx = mc.player.getX() - mc.player.prevX;
-        double dz = mc.player.getZ() - mc.player.prevZ;
+        double dx = mc.player.getX() - mc.player.xo;
+        double dz = mc.player.getZ() - mc.player.zo;
         return Math.sqrt(dx * dx + dz * dz) * 20.0;
     }
 

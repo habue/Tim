@@ -2,24 +2,24 @@ package com.example.addon.mixin;
 
 import com.example.addon.modules.ThirdSight;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-import net.minecraft.client.render.Camera;
+import net.minecraft.client.Camera;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(Camera.class)
+@Mixin(value = Camera.class, remap = false)
 public abstract class ThirdSightCameraMixin {
 
     @org.spongepowered.asm.mixin.Shadow
-    protected abstract void moveBy(float forward, float up, float right);
+    protected abstract void move(float forward, float up, float right);
 
     /**
      * Intercept the distance passed to clipToSpace so we always get
      * our configured distance and blocks never pull the camera closer.
      */
-    @Inject(method = "clipToSpace", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getMaxZoom", at = @At("HEAD"), cancellable = true)
     private void onClipToSpace(float desiredDistance, CallbackInfoReturnable<Float> cir) {
         ThirdSight module = Modules.get().get(ThirdSight.class);
         if (module == null || !module.isActive()) return;
@@ -35,10 +35,10 @@ public abstract class ThirdSightCameraMixin {
      * camera positioning logic uses our angle from the start.
      */
     @ModifyArg(
-        method = "update",
+        method = "alignWithEntity",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/render/Camera;setRotation(FF)V"
+            target = "Lnet/minecraft/client/Camera;setRotation(FF)V"
         ),
         index = 0
     )
@@ -49,10 +49,10 @@ public abstract class ThirdSightCameraMixin {
     }
 
     @ModifyArg(
-        method = "update",
+        method = "alignWithEntity",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/render/Camera;setRotation(FF)V"
+            target = "Lnet/minecraft/client/Camera;setRotation(FF)V"
         ),
         index = 1
     )

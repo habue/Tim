@@ -15,10 +15,10 @@ import meteordevelopment.meteorclient.systems.hud.HudRenderer;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class SecondLifeHUD extends HudElement {
 
@@ -43,7 +43,7 @@ public class SecondLifeHUD extends HudElement {
 
     // ── Constants ─────────────────────────────────────────────────────────────
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
     private static final ItemStack TOTEM_STACK = new ItemStack(Items.TOTEM_OF_UNDYING);
 
     // ── Setting Groups ────────────────────────────────────────────────────────
@@ -255,11 +255,11 @@ public class SecondLifeHUD extends HudElement {
 
     @EventHandler
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (mc.player == null || mc.world == null) return;
-        if (event.packet instanceof EntityStatusS2CPacket packet && packet.getStatus() == 35) {
-            if (packet.getEntity(mc.world) != null && packet.getEntity(mc.world).getId() == mc.player.getId()) {
+        if (mc.player == null || mc.level == null) return;
+        if (event.packet instanceof ClientboundEntityEventPacket packet && packet.getEventId() == 35) {
+            if (packet.getEntity(mc.level) != null && packet.getEntity(mc.level).getId() == mc.player.getId()) {
                 sessionPops++;
-                if (playSound.get()) mc.player.playSound(net.minecraft.sound.SoundEvents.ITEM_TOTEM_USE, 0.5f, 0.8f);
+                if (playSound.get()) mc.player.playSound(net.minecraft.sounds.SoundEvents.TOTEM_USE, 0.5f, 0.8f);
             }
         }
     }
@@ -282,7 +282,7 @@ public class SecondLifeHUD extends HudElement {
 
         // Play alert sound if count drops into warning/critical range
         if (lastCount != -1 && count < lastCount && count <= warningCount.get() && playSound.get()) {
-            mc.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_ITEM_BREAK, 1f, 0.5f);
+            mc.player.playSound(net.minecraft.sounds.SoundEvents.ITEM_BREAK.value(), 1f, 0.5f);
         }
         lastCount = count;
 
@@ -434,14 +434,13 @@ public class SecondLifeHUD extends HudElement {
         var inv = mc.player.getInventory();
         int total = 0;
 
-        for (var list : java.util.List.of(inv.main, inv.offHand, inv.armor)) {
-            for (ItemStack s : list) {
-                if (s.isOf(Items.TOTEM_OF_UNDYING)) total += s.getCount();
-            }
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.is(Items.TOTEM_OF_UNDYING)) total += stack.getCount();
         }
 
-        if (mc.player.currentScreenHandler != null) {
-            if (mc.player.currentScreenHandler.getCursorStack().isOf(Items.TOTEM_OF_UNDYING)) total += mc.player.currentScreenHandler.getCursorStack().getCount();
+        if (mc.player.containerMenu != null) {
+            if (mc.player.containerMenu.getCarried().is(Items.TOTEM_OF_UNDYING)) total += mc.player.containerMenu.getCarried().getCount();
         }
 
         return total;

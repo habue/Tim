@@ -21,7 +21,7 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.misc.Keybind;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 /**
  * Info Assistant HUD
@@ -44,7 +44,7 @@ public class InfoAssistantHud extends HudElement {
         InfoAssistantHud::new
     );
 
-    private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -284,8 +284,8 @@ public class InfoAssistantHud extends HudElement {
         double hoveredRowY = 0;
 
         if (descMode.get() == DescMode.On_Hover) {
-            double mouseX = mc.mouse.getX() / (double) mc.getWindow().getScaleFactor();
-            double mouseY = mc.mouse.getY() / (double) mc.getWindow().getScaleFactor();
+            double mouseX = mc.mouseHandler.xpos() / (double) mc.getWindow().getGuiScale();
+            double mouseY = mc.mouseHandler.ypos() / (double) mc.getWindow().getGuiScale();
 
             if (mouseX >= x && mouseX <= x + totalW && mouseY >= y && mouseY <= y + totalH) {
                 int idx = 0;
@@ -383,9 +383,9 @@ public class InfoAssistantHud extends HudElement {
 
             double tipX = right ? x - tipW - 4 * s : x + totalW + 4 * s;
             if (right && tipX < 0) tipX = x + totalW + 4 * s;
-            if (!right && tipX + tipW > mc.getWindow().getScaledWidth()) tipX = x - tipW - 4 * s;
+            if (!right && tipX + tipW > mc.getWindow().getGuiScaledWidth()) tipX = x - tipW - 4 * s;
 
-            double tipY = Math.max(0, Math.min(hoveredRowY, mc.getWindow().getScaledHeight() - tipH));
+            double tipY = Math.max(0, Math.min(hoveredRowY, mc.getWindow().getGuiScaledHeight() - tipH));
 
             renderer.quad(tipX, tipY, tipW, tipH, backgroundColor.get());
             

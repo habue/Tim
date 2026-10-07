@@ -1,15 +1,15 @@
 package com.example.addon.mixin;
 
-import net.minecraft.block.entity.EndGatewayBlockEntity;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
-@Mixin(EndGatewayBlockEntity.class)
+@Mixin(value = TheEndGatewayBlockEntity.class, remap = false)
 public interface EndGatewayBlockEntityAccessor {
 
-    @Accessor("exitPortalPos")
+    @Accessor("exitPortal")
     @Nullable
     BlockPos getExitPortalPos();
 }

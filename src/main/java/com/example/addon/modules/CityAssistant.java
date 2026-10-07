@@ -27,35 +27,35 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.block.enums.SculkSensorPhase;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.ingame.ShulkerBoxScreen;
-import net.minecraft.entity.mob.WardenEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.DisconnectionInfo;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.DisconnectionDetails;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.monster.warden.Warden;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.SculkSensorPhase;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class CityAssistant extends Module {
 
@@ -364,9 +364,9 @@ public class CityAssistant extends Module {
     @Override
     public void onDeactivate() {
         if (drinkTimer > 0) {
-            mc.options.useKey.setPressed(false);
+            mc.options.keyUse.setDown(false);
             if (previousDrinkSlot != -1 && mc.player != null) {
-                mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
             }
         }
         GlowingRegistry.clear();
@@ -379,7 +379,7 @@ public class CityAssistant extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         if (performSafetyChecks()) return;
         checkForPlayers();
         checkDarknessEffect();
@@ -392,7 +392,7 @@ public class CityAssistant extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         boolean isSpectral = renderMode.get() == RenderMode.SPECTRAL;
         boolean isPulse = renderMode.get() == RenderMode.PULSE;
@@ -402,13 +402,13 @@ public class CityAssistant extends Module {
             BlockPos pos = entry.getKey();
             TargetType type = entry.getValue();
 
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-            if (mc.world.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+            if (mc.level.getBlockState(pos).isAir()) { toRemove.add(pos); continue; }
 
-            Block currentBlock = mc.world.getBlockState(pos).getBlock();
+            Block currentBlock = mc.level.getBlockState(pos).getBlock();
             if (!validateBlockType(currentBlock, type)) { toRemove.add(pos); continue; }
 
-            Box renderBox = new Box(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
+            AABB renderBox = new AABB(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0);
             SettingColor color = getColor(type);
             if (color == null) continue;
 
@@ -432,17 +432,17 @@ public class CityAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void updateDynamicStates() {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
 
         for (BlockPos pos : new HashSet<>(targets.keySet())) {
-            if (!mc.world.getChunkManager().isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4)) continue;
+            if (!mc.level.getChunkSource().hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
 
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             Block block = state.getBlock();
 
             if (block == Blocks.SCULK_SHRIEKER) {
-                boolean isShrieking = state.get(Properties.SHRIEKING);
-                boolean canSummon = state.get(Properties.CAN_SUMMON);
+                boolean isShrieking = state.getValue(BlockStateProperties.SHRIEKING);
+                boolean canSummon = state.getValue(BlockStateProperties.CAN_SUMMON);
                 TargetType currentType = targets.get(pos);
                 TargetType newType;
 
@@ -462,7 +462,7 @@ public class CityAssistant extends Module {
                     }
                 }
             } else if (block == Blocks.SCULK_SENSOR) {
-                SculkSensorPhase phase = state.get(Properties.SCULK_SENSOR_PHASE);
+                SculkSensorPhase phase = state.getValue(BlockStateProperties.SCULK_SENSOR_PHASE);
                 TargetType currentType = targets.get(pos);
                 TargetType newType = (phase == SculkSensorPhase.ACTIVE) ? TargetType.ACTIVE_SENSOR : TargetType.SENSOR;
 
@@ -478,10 +478,10 @@ public class CityAssistant extends Module {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void updateScanningLogic() {
-        if (mc.world.getRegistryKey() == null) return;
+        if (mc.level.dimension() == null) return;
         if (dimensionChangeCooldown > 0) { dimensionChangeCooldown--; return; }
 
-        String currDim = mc.world.getRegistryKey().getValue().toString();
+        String currDim = mc.level.dimension().identifier().toString();
         if (!currDim.equals(lastDimension)) {
             dimensionChangeCooldown = DIMENSION_CHANGE_COOLDOWN_TICKS;
             lastDimension = currDim;
@@ -491,7 +491,7 @@ public class CityAssistant extends Module {
             return;
         }
 
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int centerChunkX = playerPos.getX() >> 4;
         int centerChunkZ = playerPos.getZ() >> 4;
 
@@ -505,10 +505,10 @@ public class CityAssistant extends Module {
         if (!enableWardenPing.get()) return;
 
         int blockRange = range.get() * 16;
-        Box searchBox = new Box(mc.player.getBlockPos()).expand(blockRange);
+        AABB searchBox = new AABB(mc.player.blockPosition()).inflate(blockRange);
         Set<Integer> currentIds = new HashSet<>();
 
-        for (WardenEntity warden : mc.world.getEntitiesByClass(WardenEntity.class, searchBox, e -> true)) {
+        for (Warden warden : mc.level.getEntitiesOfClass(Warden.class, searchBox, e -> true)) {
             currentIds.add(warden.getId());
             
             if (notifiedWardens.add(warden.getId())) {
@@ -539,8 +539,8 @@ public class CityAssistant extends Module {
         int rSq = r * r;
 
         scannedChunks.removeIf(cp -> {
-            int dx = cp.x - centerChunkX;
-            int dz = cp.z - centerChunkZ;
+            int dx = cp.x() - centerChunkX;
+            int dz = cp.z() - centerChunkZ;
             return dx * dx + dz * dz > rSq;
         });
 
@@ -577,9 +577,9 @@ public class CityAssistant extends Module {
 
         ChunkPos cp = new ChunkPos(cx, cz);
         if (scannedChunks.contains(cp)) return false;
-        if (!mc.world.getChunkManager().isChunkLoaded(cx, cz)) return false;
+        if (!mc.level.getChunkSource().hasChunk(cx, cz)) return false;
 
-        WorldChunk chunk = mc.world.getChunk(cx, cz);
+        LevelChunk chunk = mc.level.getChunk(cx, cz);
         scanBlockEntitiesInChunk(chunk);
         scannedChunks.add(cp);
         return true;
@@ -589,26 +589,26 @@ public class CityAssistant extends Module {
     // Block Entity Scanning
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void scanBlockEntitiesInChunk(WorldChunk chunk) {
+    private void scanBlockEntitiesInChunk(LevelChunk chunk) {
         int maxY = cityYLevel.get(); 
 
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            BlockPos pos = be.getPos();
+            BlockPos pos = be.getBlockPos();
             if (pos.getY() > maxY) continue;
 
-            BlockState state = mc.world.getBlockState(pos);
+            BlockState state = mc.level.getBlockState(pos);
             Block block = state.getBlock();
             
             if (block == Blocks.SCULK_SHRIEKER) {
-                boolean isShrieking = state.get(Properties.SHRIEKING);
-                boolean canSummon = state.get(Properties.CAN_SUMMON);
+                boolean isShrieking = state.getValue(BlockStateProperties.SHRIEKING);
+                boolean canSummon = state.getValue(BlockStateProperties.CAN_SUMMON);
                 
                 if (isShrieking) targets.put(pos, TargetType.ACTIVE_SHRIEKER);
                 else if (!canSummon) targets.put(pos, TargetType.DISABLED_SHRIEKER);
                 else targets.put(pos, TargetType.SHRIEKER);
             } 
             else if (block == Blocks.SCULK_SENSOR) {
-                SculkSensorPhase phase = state.get(Properties.SCULK_SENSOR_PHASE);
+                SculkSensorPhase phase = state.getValue(BlockStateProperties.SCULK_SENSOR_PHASE);
                 targets.put(pos, phase == SculkSensorPhase.ACTIVE ? TargetType.ACTIVE_SENSOR : TargetType.SENSOR);
             }
             else if (be instanceof ChestBlockEntity) {
@@ -624,13 +624,13 @@ public class CityAssistant extends Module {
     private void updateContainerLogic() {
         if (interactTimeoutTimer > 0) interactTimeoutTimer--;
 
-        if (mc.currentScreen == null && !wasAutoOpened) {
+        if (mc.screen == null && !wasAutoOpened) {
             List<BlockPos> nearbyChests = targets.entrySet().stream()
                 .filter(e -> e.getValue() == TargetType.CONTAINER)
                 .map(Map.Entry::getKey)
                 .filter(pos -> !checkedContainers.contains(pos))
-                .filter(pos -> Math.sqrt(pos.getSquaredDistance(mc.player.getPos())) <= 4.5)
-                .sorted(Comparator.comparingDouble(pos -> pos.getSquaredDistance(mc.player.getPos())))
+                .filter(pos -> Math.sqrt(pos.distToCenterSqr(mc.player.position())) <= 4.5)
+                .sorted(Comparator.comparingDouble(pos -> pos.distToCenterSqr(mc.player.position())))
                 .toList();
 
             if (!nearbyChests.isEmpty()) {
@@ -640,33 +640,33 @@ public class CityAssistant extends Module {
                 interactTimeoutTimer = INTERACT_TIMEOUT_TICKS;
 
                 Rotations.rotate(Rotations.getYaw(pos), Rotations.getPitch(pos), () -> {
-                    BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(pos), Direction.UP, pos, false);
-                    mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-                    mc.player.swingHand(Hand.MAIN_HAND);
+                    BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+                    mc.player.swing(InteractionHand.MAIN_HAND);
                 });
             }
-        } else if (mc.currentScreen == null && wasAutoOpened && interactTimeoutTimer == 0) {
+        } else if (mc.screen == null && wasAutoOpened && interactTimeoutTimer == 0) {
             wasAutoOpened = false;
         }
     }
 
     private void checkOpenedContainerLoot() {
-        if (mc.currentScreen instanceof HandledScreen<?> screen && !(mc.currentScreen instanceof InventoryScreen)) {
+        if (mc.screen instanceof AbstractContainerScreen<?> screen && !(mc.screen instanceof InventoryScreen)) {
             // Ignore Ender Chest and Shulker Box contents to prevent false triggers
-            if (mc.currentScreen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Text.translatable("container.enderchest").getString())) {
+            if (mc.screen instanceof ShulkerBoxScreen || screen.getTitle().getString().equals(Component.translatable("container.enderchest").getString())) {
                 hasAlertedForCurrentScreen = true;
                 return;
             }
             
             if (!hasAlertedForCurrentScreen) {
-                for (int i = 0; i < screen.getScreenHandler().slots.size(); i++) {
-                    Slot slot = screen.getScreenHandler().slots.get(i);
+                for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+                    Slot slot = screen.getMenu().slots.get(i);
                     // Ignore player's own inventory contents to prevent false triggers
-                    if (slot.inventory instanceof PlayerInventory) continue;
+                    if (slot.container instanceof Inventory) continue;
                     
-                    ItemStack stack = slot.getStack();
+                    ItemStack stack = slot.getItem();
                     if (!stack.isEmpty() && containerWhitelist.get().contains(stack.getItem())) {
-                        info("§cRare loot found in chest: §e" + stack.getName().getString() + "§c!");
+                        info("§cRare loot found in chest: §e" + stack.getHoverName().getString() + "§c!");
                         playAlert();
                         hasAlertedForCurrentScreen = true;
                         break;
@@ -681,9 +681,9 @@ public class CityAssistant extends Module {
     private void updateMilkDrink() {
         if (!autoMilkDarkness.get()) {
             if (drinkTimer > 0) {
-                mc.options.useKey.setPressed(false);
+                mc.options.keyUse.setDown(false);
                 if (previousDrinkSlot != -1 && mc.player != null) {
-                    mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                    mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
                     previousDrinkSlot = -1;
                 }
                 drinkTimer = 0;
@@ -691,22 +691,22 @@ public class CityAssistant extends Module {
             return;
         }
 
-        boolean hasDarkness = mc.player.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.DARKNESS);
+        boolean hasDarkness = mc.player.hasEffect(net.minecraft.world.effect.MobEffects.DARKNESS);
         
-        if (drinkTimer == 0 && hasDarkness && mc.currentScreen == null) {
+        if (drinkTimer == 0 && hasDarkness && mc.screen == null) {
             int milkSlot = findMilkBucket();
             if (milkSlot != -1) {
-                previousDrinkSlot = mc.player.getInventory().selectedSlot;
-                mc.player.getInventory().selectedSlot = milkSlot;
-                mc.options.useKey.setPressed(true);
+                previousDrinkSlot = mc.player.getInventory().getSelectedSlot();
+                mc.player.getInventory().setSelectedSlot(milkSlot);
+                mc.options.keyUse.setDown(true);
                 drinkTimer = 32;
             }
         } else if (drinkTimer > 0) {
             drinkTimer--;
-            if (!hasDarkness || drinkTimer == 0 || mc.player.getInventory().getStack(mc.player.getInventory().selectedSlot).getItem() != Items.MILK_BUCKET) {
-                mc.options.useKey.setPressed(false);
+            if (!hasDarkness || drinkTimer == 0 || mc.player.getInventory().getItem(mc.player.getInventory().getSelectedSlot()).getItem() != Items.MILK_BUCKET) {
+                mc.options.keyUse.setDown(false);
                 if (previousDrinkSlot != -1) {
-                    mc.player.getInventory().selectedSlot = previousDrinkSlot;
+                    mc.player.getInventory().setSelectedSlot(previousDrinkSlot);
                     previousDrinkSlot = -1;
                 }
                 drinkTimer = 0;
@@ -716,7 +716,7 @@ public class CityAssistant extends Module {
 
     private int findMilkBucket() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).isOf(Items.MILK_BUCKET)) return i;
+            if (mc.player.getInventory().getItem(i).is(Items.MILK_BUCKET)) return i;
         }
         return -1;
     }
@@ -729,7 +729,7 @@ public class CityAssistant extends Module {
             return;
         }
 
-        boolean hasDarkness = mc.player.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.DARKNESS);
+        boolean hasDarkness = mc.player.hasEffect(net.minecraft.world.effect.MobEffects.DARKNESS);
 
         if (hasDarkness) {
             warning("Darkness effect applied! Vision impaired.");
@@ -740,11 +740,11 @@ public class CityAssistant extends Module {
 
     private void checkForPlayers() {
         if (!disconnectOnPlayer.get()) return;
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (player == mc.player || player.isSpectator()) continue;
             if (player.distanceTo(mc.player) < 128) {
                 info("§cPlayer detected in render distance! Disconnecting...");
-                mc.getNetworkHandler().getConnection().disconnect(new DisconnectionInfo(Text.literal("Player detected in render distance")));
+                mc.getConnection().getConnection().disconnect(new DisconnectionDetails(Component.literal("Player detected in render distance")));
                 return;
             }
         }
@@ -753,12 +753,12 @@ public class CityAssistant extends Module {
     private void playAlert() {
         if (mc.player == null) return;
         SoundEvent sound = switch (alertSound.get()) {
-            case LEVEL_UP -> SoundEvents.ENTITY_PLAYER_LEVELUP;
-            case RAVAGER_ROAR -> SoundEvents.ENTITY_RAVAGER_ROAR;
-            case EXPERIENCE_ORB -> SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP;
-            case BELL -> SoundEvents.BLOCK_BELL_USE;
-            case DRAGON_GROWL -> SoundEvents.ENTITY_ENDER_DRAGON_GROWL;
-            case WARDEN_ROAR -> SoundEvents.ENTITY_WARDEN_ROAR;
+            case LEVEL_UP -> SoundEvents.PLAYER_LEVELUP;
+            case RAVAGER_ROAR -> SoundEvents.RAVAGER_ROAR;
+            case EXPERIENCE_ORB -> SoundEvents.EXPERIENCE_ORB_PICKUP;
+            case BELL -> SoundEvents.BELL_BLOCK;
+            case DRAGON_GROWL -> SoundEvents.ENDER_DRAGON_GROWL;
+            case WARDEN_ROAR -> SoundEvents.WARDEN_ROAR;
         };
         mc.player.playSound(sound, alertVolume.get().floatValue(), 1.0f);
     }
@@ -767,7 +767,7 @@ public class CityAssistant extends Module {
     // Bloom & Pulse Rendering
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private void renderGlowLayers(Render3DEvent event, Box box, SettingColor color) {
+    private void renderGlowLayers(Render3DEvent event, AABB box, SettingColor color) {
         int layers = glowLayers.get();
         double spread = glowSpread.get();
         int baseAlpha = glowBaseAlpha.get();
@@ -776,7 +776,7 @@ public class CityAssistant extends Module {
             double expansion = spread * i;
             int layerAlpha = Math.max(4, (int) (baseAlpha * (1.0 - (double)(i - 1) / layers)));
             event.renderer.box(
-                box.expand(expansion),
+                box.inflate(expansion),
                 withAlpha(color, layerAlpha),
                 withAlpha(color, 0),
                 ShapeMode.Sides, 0
@@ -798,7 +798,7 @@ public class CityAssistant extends Module {
         return Math.min(255, Math.max(0, (int)(min + (max - min) * f)));
     }
 
-    private void renderPulseBox(Render3DEvent event, Box box, SettingColor base) {
+    private void renderPulseBox(Render3DEvent event, AABB box, SettingColor base) {
         int pa = applyPulse(base.a);
         SettingColor pColor = withAlpha(base, pa);
         int layers = glowLayers.get();
@@ -807,7 +807,7 @@ public class CityAssistant extends Module {
             double expansion = spread * i;
             double taper = 1.0 - ((double)(i - 1) / layers) * 0.6;
             int layerAlpha = Math.max(4, (int)(pa * taper));
-            event.renderer.box(box.expand(expansion),
+            event.renderer.box(box.inflate(expansion),
                 withAlpha(pColor, layerAlpha), withAlpha(pColor, 0), ShapeMode.Sides, 0);
         }
         event.renderer.box(box, withAlpha(pColor, pa / 3), pColor, ShapeMode.Both, 0);
@@ -837,16 +837,16 @@ public class CityAssistant extends Module {
     }
 
     private void pruneBlockTargets() {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
         Set<BlockPos> toRemove = new HashSet<>();
         for (Map.Entry<BlockPos, TargetType> entry : targets.entrySet()) {
             BlockPos pos = entry.getKey();
             int chunkX = pos.getX() >> 4;
             int chunkZ = pos.getZ() >> 4;
 
-            if (mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                Block currentBlock = mc.world.getBlockState(pos).getBlock();
-                if (mc.world.getBlockState(pos).isAir() || !validateBlockType(currentBlock, entry.getValue())) {
+            if (mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+                Block currentBlock = mc.level.getBlockState(pos).getBlock();
+                if (mc.level.getBlockState(pos).isAir() || !validateBlockType(currentBlock, entry.getValue())) {
                     toRemove.add(pos);
                 }
             } else {
@@ -878,8 +878,8 @@ public class CityAssistant extends Module {
 
     private boolean performSafetyChecks() {
         if (!autoDisableOnLowHealth.get()) return false;
-        boolean hasTotem = mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)
-            || mc.player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING);
+        boolean hasTotem = mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)
+            || mc.player.getMainHandItem().is(Items.TOTEM_OF_UNDYING);
         if (hasTotem && mc.player.getHealth() <= 6) { 
             error("Health is critical, disabling to prevent totem pop.");
             toggle();
