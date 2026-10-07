@@ -74,6 +74,8 @@ public class Tim extends MeteorAddon {
     public void onInitialize() {
         LOG.info("Initializing Tim - Trail Investigator Module");
 
+        requireBaritoneApi();
+
         // Modules (A-Z)
         Modules modules = Modules.get();
         modules.add(new Baromine());
@@ -134,6 +136,18 @@ public class Tim extends MeteorAddon {
         Hud.get().register(StatisticsInformation.INFO);
         Hud.get().register(TimeThrottleHUD.INFO);
         LOG.info("Tim initialized: 35 modules and 20 HUD elements registered");
+    }
+
+    private static void requireBaritoneApi() {
+        try {
+            // Check the API rather than a mod ID: standalone and Meteor builds use different IDs.
+            Class.forName("baritone.api.BaritoneAPI", false, Tim.class.getClassLoader());
+            Class.forName("baritone.api.pathing.goals.Goal", false, Tim.class.getClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            throw new IllegalStateException(
+                "Tim requires the Baritone API for Minecraft 26.1.2. Install a compatible "
+                    + "Fabric Baritone or Meteor Baritone build in this instance's mods folder.", e);
+        }
     }
 
     @Override

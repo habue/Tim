@@ -5,12 +5,12 @@ The port is maintained on the `meteor-26.1.2` branch. Original modules and HUD e
 
 ## Installation
 
-1. Use Minecraft **26.1.2**, Java **25**, Fabric Loader **0.19.2 or newer**, Meteor Client for **26.1.2**, and the Meteor Baritone build for **26.1** (which supports 26.1.2).
+1. Use Minecraft **26.1.2**, Java **25**, Fabric Loader **0.19.2 or newer**, Meteor Client for **26.1.2**, and a Fabric Baritone build compatible with **26.1.2** (the Meteor Baritone build for **26.1** also supports 26.1.2).
 2. Download `Tim-26.1.2` from a successful [GitHub Actions build](https://github.com/habue/Tim/actions/workflows/build.yml).
-3. Extract the ZIP and put `Tim-1.0-26.1.2.jar` in your `mods` directory.
+3. Extract the ZIP and put `Tim-1.0.1-26.1.2.jar` in your `mods` directory.
 4. Enable modules in the **Tim** category and add HUD elements from the **Tim** group.
 
-Baritone (`baritone-meteor`) is required because Tim loads its API during initialization. Install the compatible Meteor Baritone build alongside Meteor. The Fabric dependency check reports a missing Baritone before game startup.
+Baritone is required because Tim loads its API during initialization. Tim checks the API classes rather than requiring a specific mod ID, so both standalone Fabric and Meteor builds are accepted. Install only one compatible Baritone build; Tim reports a clear initialization error if its API is absent.
 
 ## Building
 
