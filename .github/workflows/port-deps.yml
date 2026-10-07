@@ -2,7 +2,7 @@ name: Prepare port dependencies
 on:
   push:
     branches: [meteor-26.1.2]
-    paths: [.github/workflows/port-deps.yml]
+    paths: [.github/workflows/port-deps.yml, gradle/wrapper/gradle-wrapper.properties]
 permissions:
   contents: read
 jobs:
